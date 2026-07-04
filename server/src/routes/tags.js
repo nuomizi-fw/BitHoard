@@ -1,0 +1,84 @@
+import { Router } from 'express';
+import { v4 as uuidv4 } from 'uuid';
+import { getDb } from '../database/connection.js';
+import writeQueue from '../database/write-queue.js';
+
+const router = Router();
+
+/**
+ * 获取所有标签
+ * GET /api/tags
+ */
+router.get('/', (req, res) => {
+  const db = getDb();
+  const tags = db.prepare(`
+    SELECT t.*, COUNT(rt.resource_id) as resource_count
+    FROM tag t
+    LEFT JOIN resource_tag rt ON t.id = rt.tag_id
+    GROUP BY t.id
+    ORDER BY t.name
+  `).all();
+  res.json(tags);
+});
+
+/**
+ * 创建标签
+ * POST /api/tags
+ */
+router.post('/', async (req, res) => {
+  const { name, color } = req.body;
+  if (!name) return res.status(400).json({ error: 'Name required' });
+
+  const db = getDb();
+  const existing = db.prepare('SELECT * FROM tag WHERE name = ?').get(name);
+  if (existing) return res.json(existing);
+
+  const id = uuidv4();
+  await writeQueue.enqueue(() => {
+    db.prepare('INSERT INTO tag (id, name, color) VALUES (?, ?, ?)').run(id, name, color || '#6366f1');
+  });
+
+  res.status(201).json(db.prepare('SELECT * FROM tag WHERE id = ?').get(id));
+});
+
+/**
+ * 删除标签
+ * DELETE /api/tags/:id
+ */
+router.delete('/:id', async (req, res) => {
+  await writeQueue.enqueue(() => {
+    const db = getDb();
+    db.prepare('DELETE FROM tag WHERE id = ?').run(req.params.id);
+  });
+  res.json({ success: true });
+});
+
+/**
+ * 为资源添加标签
+ * POST /api/resources/:resourceId/tags
+ */
+router.post('/resources/:resourceId/tags', async (req, res) => {
+  const { resourceId } = req.params;
+  const { tag_id } = req.body;
+
+  const db = getDb();
+  await writeQueue.enqueue(() => {
+    db.prepare('INSERT OR IGNORE INTO resource_tag (resource_id, tag_id) VALUES (?, ?)').run(resourceId, tag_id);
+  });
+
+  res.json({ success: true });
+});
+
+/**
+ * 移除资源的标签
+ * DELETE /api/resources/:resourceId/tags/:tagId
+ */
+router.delete('/resources/:resourceId/tags/:tagId', async (req, res) => {
+  await writeQueue.enqueue(() => {
+    const db = getDb();
+    db.prepare('DELETE FROM resource_tag WHERE resource_id = ? AND tag_id = ?').run(req.params.resourceId, req.params.tagId);
+  });
+  res.json({ success: true });
+});
+
+export default router;

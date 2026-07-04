@@ -1,0 +1,46 @@
+---
+description: C++ 成员变量命名规范
+globs: "**/*.h"
+alwaysApply: false
+---
+
+# 成员变量命名规范
+
+- 成员变量**不使用**尾部下划线 `_` 后缀
+- 成员变量使用 `snake_case` 命名，与局部变量保持一致
+
+```cpp
+// ❌ 错误
+class Foo
+{
+    std::string name_;
+    int count_;
+    std::mutex mtx_;
+};
+
+// ✅ 正确
+class Foo
+{
+    std::string name;
+    int count;
+    std::mutex mtx;
+};
+```
+
+- 当构造函数参数与成员变量同名时，利用 C++ 成员初始化列表语义自动区分：
+
+```cpp
+// ✅ C++ 标准允许：外层名称指向成员，内层名称指向参数
+class Bar
+{
+public:
+    Bar(const std::string& token, int port)
+        : token(token), port(port) {}
+
+private:
+    std::string token;
+    int port;
+};
+```
+
+- 若成员变量与同类方法同名会产生冲突，优先调整方法名（如加 `get_` 前缀）

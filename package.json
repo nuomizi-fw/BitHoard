@@ -1,0 +1,37 @@
+{
+    "name": "bithoard",
+    "version": "0.1.0",
+    "description": "BitHoard - 磁链资源管理与下载工具",
+    "private": true,
+    "main": "electron/main.js",
+    "packageManager": "pnpm@9.15.4",
+    "scripts": {
+        "dev": "concurrently \"pnpm run dev:server\" \"pnpm run dev:web\" \"wait-on http://localhost:13002 && pnpm run dev:electron\"",
+        "dev:server": "pnpm -C server dev",
+        "dev:web": "pnpm -C web dev",
+        "dev:electron": "electron .",
+        "build": "pnpm run build:web && pnpm run build:electron",
+        "build:web": "pnpm -C web build",
+        "build:electron": "electron-builder"
+    },
+    "devDependencies": {
+        "concurrently": "^8.2.2",
+        "electron": "^31.2.0",
+        "electron-builder": "^24.13.3",
+        "wait-on": "^7.2.0"
+    },
+    "build": {
+        "appId": "com.bithoard.app",
+        "productName": "BitHoard",
+        "directories": {
+            "output": "dist-electron"
+        },
+        "files": [
+            "electron/**/*",
+            "server/**/*",
+            "web/dist/**/*",
+            "node_modules/**/*"
+        ],
+        "extraResources": []
+    }
+}

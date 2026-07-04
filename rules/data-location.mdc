@@ -1,0 +1,20 @@
+---
+description: 可执行文件数据存储位置规范
+alwaysApply: true
+---
+
+# 数据存储位置
+
+- 可执行文件产生的**所有运行时数据**（包括但不限于配置、缓存、日志、数据库、临时文件等）统一存放在可执行文件所在目录下的 `data/` 子目录中
+- **禁止**将数据写入用户系统目录，包括但不限于：
+  - `%APPDATA%`（`C:\Users\<用户>\AppData\Roaming`）
+  - `%LOCALAPPDATA%`（`C:\Users\<用户>\AppData\Local`）
+  - `%USERPROFILE%` 下的其他隐藏目录
+  - 注册表（Registry）
+- 程序启动时自动创建 `data/` 目录（如不存在），无需用户手动干预
+- `data/` 目录应随可执行文件一起分发或移动，保证程序的**完全便携化**（拷贝即用，删除即净）
+- 如需子目录分类，在 `data/` 下按用途建立，例如：
+  - `data/logs/` — 日志文件
+  - `data/config/` — 配置文件
+  - `data/cache/` — 缓存文件
+  - `data/db/` — 数据库文件

@@ -1,0 +1,10 @@
+node_modules/
+dist/
+dist-electron/
+data/
+.env
+*.log
+.DS_Store
+Thumbs.db
+web/dist/
+.pnpm-store/

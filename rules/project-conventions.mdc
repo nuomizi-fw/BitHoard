@@ -1,0 +1,35 @@
+---
+description: 项目通用开发约定
+alwaysApply: true
+---
+
+# 思维语言
+
+- **始终使用中文进行思考和推理**，包括内部分析、方案设计、问题排查等所有思维过程
+- 所有对用户的回复也使用中文
+
+# 项目环境
+
+- 终端环境为 **PowerShell**，所有命令行操作使用 PowerShell 语法
+- 不要使用 bash/sh 专有语法（如 `&&` 链式命令、`export`），改用 PowerShell 等效写法
+
+# 终端代理
+
+- 每次新终端会话开始时，必须先设置代理：
+  ```powershell
+  $env:http_proxy = "http://127.0.0.1:1080"
+  $env:https_proxy = "http://127.0.0.1:1080"
+  ```
+- 代理设置必须在所有网络操作（pnpm install、cargo build/fetch、rustup 等）之前完成
+
+# 注释规范
+
+- 代码注释一律使用**中文**书写
+- 包括但不限于：行内注释、块注释、文件头注释、TODO/FIXME 等
+
+# 图表规范
+
+- 流程图、架构图、时序图等一律使用 **Mermaid** 格式编写
+- 适用场景包括但不限于：流程图（flowchart）、时序图（sequenceDiagram）、类图（classDiagram）、状态图（stateDiagram）、ER 图（erDiagram）等
+- 禁止使用纯 ASCII 字符画或外部图片代替可用 Mermaid 表达的图表
+- Mermaid 图表中的标签和说明文字使用**中文**

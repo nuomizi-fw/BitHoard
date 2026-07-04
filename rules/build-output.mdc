@@ -1,0 +1,46 @@
+---
+description: 构建产物输出目录规范
+alwaysApply: true
+---
+
+# 构建产物输出
+
+- 所有构建产物（编译输出、打包结果、中间文件等）统一输出到项目根目录下的 `build/` 目录
+- **禁止**将构建产物散落在各子项目内部（如 `src-tauri/target/`、`dist/`、`out/` 等）
+- 按技术栈分子目录存放：
+
+| 子目录 | 来源 | 说明 |
+|--------|------|------|
+| `build/rust/` | Cargo (Rust) | Rust 编译产物 |
+| `build/frontend/` | Vite / tsc | 前端构建产物 |
+| `build/tauri/` | Tauri bundler | Tauri 最终打包产物（`.msi`/`.exe`） |
+
+## Rust (Cargo)
+
+在项目根目录 `.cargo/config.toml` 中永久配置：
+
+```toml
+[build]
+target-dir = "build/rust"
+```
+
+## 前端 (TypeScript / Vite)
+
+在 `vite.config.ts` 中将构建输出指向根目录的 `build/frontend/`：
+
+```ts
+export default defineConfig({
+  build: {
+    outDir: '../build/frontend',
+  },
+})
+```
+
+## Tauri 打包
+
+Tauri 打包产物输出到 `build/tauri/`，在 `tauri.conf.json` 中配置 bundle 输出路径。
+
+## 注意事项
+
+- `build/` 目录必须加入 `.gitignore`，**禁止**提交到版本控制
+- `.cargo/config.toml` 方式优于环境变量（持久化，无需每次手动设置）
