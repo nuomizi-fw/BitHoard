@@ -224,6 +224,17 @@ class QBittorrentClient {
     if (!res.ok) return null;
     return res.json();
   }
+
+  /**
+   * 重载配置 (运行时配置更新后调用)
+   */
+  reconfigure() {
+    this.baseUrl = config.qbittorrent.host;
+    this.username = config.qbittorrent.username;
+    this.password = config.qbittorrent.password;
+    this.sid = null;
+    this.connected = false;
+  }
 }
 
 // 单例

@@ -4,32 +4,74 @@
     import { clearToken } from "../lib/api.js";
     import { isAuthenticated } from "../lib/stores/auth.js";
     import { showToast } from "../lib/stores/ui.js";
-    import { Server, Key, Globe, Database } from "lucide-svelte";
+    import { Server, Key, Globe, Database, Save, CheckCircle, XCircle } from "lucide-svelte";
 
     let qbHost = "http://localhost:8080";
     let qbUsername = "admin";
     let qbPassword = "";
     let qbStatus = null;
     let testingQb = false;
+    let savingQb = false;
 
     let ipWhitelist = "";
-    let authEnabled = true;
+    let savingIp = false;
 
     onMount(async () => {
         try {
-            const status = await api.checkStatus();
-            ipWhitelist = (status.ipWhitelist || []).join(", ");
-        } catch (e) {}
+            const config = await api.qbConfig();
+            if (config) {
+                qbHost = config.qbHost || qbHost;
+                qbUsername = config.qbUsername || qbUsername;
+                ipWhitelist = (config.ipWhitelist || []).join(", ");
+            }
+        } catch (e) {
+            // 回退：从 status 获取 IP 白名单
+            try {
+                const status = await api.checkStatus();
+                ipWhitelist = (status.ipWhitelist || []).join(", ");
+            } catch {}
+        }
     });
 
     async function testQbConnection() {
         testingQb = true;
+        qbStatus = null;
         try {
             qbStatus = await api.qbStatus();
         } catch (err) {
             qbStatus = { connected: false, error: err.message };
         } finally {
             testingQb = false;
+        }
+    }
+
+    async function saveQbConfig() {
+        savingQb = true;
+        try {
+            await api.updateConfig({
+                qbHost,
+                qbUsername,
+                qbPassword: qbPassword || undefined,
+            });
+            showToast({ type: "success", message: "qBittorrent 配置已保存" });
+            // 保存后清除密码字段
+            qbPassword = "";
+        } catch (err) {
+            showToast({ type: "error", message: "保存失败: " + err.message });
+        } finally {
+            savingQb = false;
+        }
+    }
+
+    async function saveIpWhitelist() {
+        savingIp = true;
+        try {
+            await api.updateConfig({ ipWhitelist });
+            showToast({ type: "success", message: "IP 白名单已更新" });
+        } catch (err) {
+            showToast({ type: "error", message: "保存失败: " + err.message });
+        } finally {
+            savingIp = false;
         }
     }
 
@@ -61,8 +103,8 @@
                 <input type="text" bind:value={qbUsername} />
             </div>
             <div class="form-group">
-                <label>密码</label>
-                <input type="password" bind:value={qbPassword} />
+                <label>密码 (留空不修改)</label>
+                <input type="password" bind:value={qbPassword} placeholder="输入新密码" />
             </div>
             <div class="form-actions">
                 <button
@@ -71,6 +113,14 @@
                     disabled={testingQb}
                 >
                     {testingQb ? "测试中..." : "测试连接"}
+                </button>
+                <button
+                    class="btn btn-secondary"
+                    on:click={saveQbConfig}
+                    disabled={savingQb}
+                >
+                    <Save size={14} />
+                    {savingQb ? "保存中..." : "保存配置"}
                 </button>
             </div>
             {#if qbStatus}
@@ -88,15 +138,23 @@
             <h3>安全设置</h3>
             <p class="card-desc">Web 访问控制</p>
             <div class="form-group">
-                <label>IP 白名单 (逗号分隔, 空=仅本地)</label>
+                <label>IP 白名单 (逗号分隔, 本地地址始终允许)</label>
                 <input
                     type="text"
                     bind:value={ipWhitelist}
-                    placeholder="127.0.0.1,192.168.1.100"
+                    placeholder="127.0.0.1, 192.168.1.100"
                 />
             </div>
             <div class="form-actions">
-                <button class="btn btn-secondary" on:click={handleLogout}
+                <button
+                    class="btn btn-secondary"
+                    on:click={saveIpWhitelist}
+                    disabled={savingIp}
+                >
+                    <Save size={14} />
+                    {savingIp ? "保存中..." : "保存白名单"}
+                </button>
+                <button class="btn btn-danger" on:click={handleLogout}
                     >退出登录</button
                 >
             </div>

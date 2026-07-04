@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import jwt from 'jsonwebtoken';
 import config from '../config.js';
+import qbClient from '../services/qbittorrent.js';
 
 const router = Router();
 
@@ -81,6 +82,42 @@ router.get('/config', (req, res) => {
     qbUsername: config.qbittorrent.username,
     ipWhitelist: config.ipWhitelist,
   });
+});
+
+/**
+ * 更新运行时配置
+ * PUT /api/auth/config
+ * Body: { qbHost?, qbUsername?, qbPassword?, ipWhitelist? }
+ */
+router.put('/config', (req, res) => {
+  const { qbHost, qbUsername, qbPassword, ipWhitelist } = req.body;
+
+  if (qbHost !== undefined) {
+    config.qbittorrent.host = qbHost;
+  }
+  if (qbUsername !== undefined) {
+    config.qbittorrent.username = qbUsername;
+  }
+  if (qbPassword !== undefined && qbPassword !== '') {
+    config.qbittorrent.password = qbPassword;
+  }
+  // 如果 qB 配置有变化，触发重载
+  if (qbHost !== undefined || qbUsername !== undefined || qbPassword) {
+    qbClient.reconfigure();
+  }
+  if (ipWhitelist !== undefined) {
+    config.ipWhitelist = ipWhitelist.split(',').map(s => s.trim()).filter(Boolean);
+    // 确保本地地址始终在列表中
+    const localAddrs = ['127.0.0.1', '::1', 'localhost'];
+    for (const addr of localAddrs) {
+      if (!config.ipWhitelist.includes(addr)) {
+        config.ipWhitelist.push(addr);
+      }
+    }
+  }
+
+  console.log('[auth] Runtime config updated');
+  res.json({ success: true });
 });
 
 export default router;

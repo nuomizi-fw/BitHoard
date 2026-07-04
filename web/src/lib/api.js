@@ -59,6 +59,12 @@ export const api = {
   checkStatus: () =>
     request('/auth/status').then(r => r.json()),
 
+  qbConfig: () =>
+    request('/auth/config').then(r => r.json()),
+
+  updateConfig: (data) =>
+    request('/auth/config', { method: 'PUT', body: data }).then(r => r.json()),
+
   // Resources
   getResources: (params = {}) => {
     const qs = new URLSearchParams(params).toString();
@@ -70,6 +76,9 @@ export const api = {
 
   createResources: (data) =>
     request('/resources', { method: 'POST', body: data }).then(r => r.json()),
+
+  importTorrent: (data) =>
+    request('/resources/import-torrent', { method: 'POST', body: data }).then(r => r.json()),
 
   updateResource: (id, data) =>
     request(`/resources/${id}`, { method: 'PATCH', body: data }).then(r => r.json()),

@@ -1,4 +1,4 @@
-const { app, ipcMain } = require('electron');
+const { app, ipcMain, clipboard } = require('electron');
 const path = require('path');
 const { spawn } = require('child_process');
 const { createWindow } = require('./window');
@@ -44,6 +44,11 @@ ipcMain.handle('clipboard:detected', async (event, data) => {
 });
 
 ipcMain.handle('get-app-version', () => app.getVersion());
+
+// 剪贴板读权限（快捷键手动捕获时使用）
+ipcMain.handle('clipboard:read', () => {
+  return clipboard.readText() || '';
+});
 
 // 拖拽文件处理
 ipcMain.handle('file:dropped', async (event, filePaths) => {

@@ -1,4 +1,5 @@
 <script>
+    import { onMount } from "svelte";
     import { Router, Route } from "svelte-routing";
     import Layout from "./components/Layout.svelte";
     import Home from "./routes/Home.svelte";
@@ -8,9 +9,44 @@
     import Search from "./routes/Search.svelte";
     import Login from "./routes/Login.svelte";
     import { isAuthenticated } from "./lib/stores/auth.js";
+    import { qbProgress } from "./lib/stores/downloads.js";
+    import { wsClient } from "./lib/ws.js";
 
     let loggedIn = false;
     isAuthenticated.subscribe((v) => (loggedIn = v));
+
+    onMount(() => {
+        // 登录后连接 WebSocket 接收 qB 进度推送
+        if (loggedIn) {
+            wsClient.connect();
+
+            wsClient.on("qb:progress", (msg) => {
+                if (msg?.torrents) {
+                    qbProgress.set({
+                        torrents: msg.torrents,
+                        server_state: msg.server_state || null,
+                    });
+                }
+            });
+
+            wsClient.on("qb:status", (msg) => {
+                qbProgress.update((current) => ({
+                    ...current,
+                    server_state: msg.server_state || msg,
+                }));
+            });
+
+            wsClient.on("connected", () => {
+                console.log("[App] WebSocket connected, qB progress live");
+            });
+
+            wsClient.on("disconnected", () => {
+                console.log("[App] WebSocket disconnected, will auto-reconnect");
+                // 清空进度数据（断开时显示离线状态）
+                qbProgress.set({ torrents: {}, server_state: null });
+            });
+        }
+    });
 </script>
 
 <Router>

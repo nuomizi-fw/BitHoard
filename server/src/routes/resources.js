@@ -183,6 +183,73 @@ router.get('/:id/torrent', (req, res) => {
 });
 
 /**
+ * 导入 .torrent 文件创建资源
+ * POST /api/resources/import-torrent
+ * Body: { data: base64, name: string, sourceApp?: string }
+ */
+router.post('/import-torrent', async (req, res) => {
+  const { data, name, sourceApp } = req.body;
+
+  if (!data) {
+    return res.status(400).json({ error: 'Base64 torrent data required' });
+  }
+
+  let torrentBuf;
+  try {
+    torrentBuf = Buffer.from(data, 'base64');
+  } catch {
+    return res.status(400).json({ error: 'Invalid base64 data' });
+  }
+
+  const db = getDb();
+
+  // 解析种子文件
+  let parsed;
+  try {
+    parsed = torrentParser.parse(torrentBuf);
+  } catch (err) {
+    return res.status(400).json({ error: 'Failed to parse torrent: ' + err.message });
+  }
+
+  if (!parsed || !parsed.infoHash) {
+    return res.status(400).json({ error: 'Invalid torrent file: no info hash' });
+  }
+
+  const magnetUri = `magnet:?xt=urn:btih:${parsed.infoHash}&dn=${encodeURIComponent(parsed.name || name || 'untitled')}`;
+
+  // 去重
+  const existing = db.prepare('SELECT id FROM resource WHERE magnet_uri = ? AND is_deleted = 0').get(magnetUri);
+  if (existing) {
+    return res.json({ id: existing.id, skipped: true, reason: 'duplicate', uri: magnetUri });
+  }
+
+  const id = uuidv4();
+  const title = parsed.name || name || '未命名种子';
+  const totalSize = parsed.totalSize || 0;
+
+  await writeQueue.enqueue(() => {
+    db.prepare(`
+      INSERT INTO resource (id, magnet_uri, title, torrent_blob, total_size, source_app, status)
+      VALUES (?, ?, ?, ?, ?, ?, 'draft')
+    `).run(id, magnetUri, title, torrentBuf, totalSize, sourceApp || 'torrent-drag');
+  });
+
+  // 缓存文件列表
+  if (parsed.files && parsed.files.length > 0) {
+    for (const file of parsed.files) {
+      await writeQueue.enqueue(() => {
+        db.prepare(`
+          INSERT INTO file_cache (id, resource_id, filename, path, size)
+          VALUES (?, ?, ?, ?, ?)
+        `).run(uuidv4(), id, file.name, file.path, file.size);
+      });
+    }
+  }
+
+  res.status(201).json({ id, uri: magnetUri, created: true, title });
+});
+
+/**
  * 创建资源
  * POST /api/resources
  */

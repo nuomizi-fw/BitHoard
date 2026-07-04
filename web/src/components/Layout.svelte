@@ -19,17 +19,125 @@
         return matches.map((m) => ({ uri: m[0], type: "magnet" }));
     }
 
-    // 全局粘贴 — 非输入框聚焦时检测磁链
+    // Electron IPC: 监听剪贴板监控推送
+    function setupElectronClipboardListener() {
+        if (!window.electronAPI?.onClipboardDetected) return;
+
+        window.electronAPI.onClipboardDetected((data) => {
+            // Electron 剪贴板监控检测到链接，显示富交互 Toast
+            showToast({
+                type: "link-capture",
+                persistent: true,
+                links: data.links || [],
+                sourceApp: data.sourceApp || "unknown",
+                sourceProcess: data.sourceProcess || "",
+                message:
+                    data.links?.length > 1
+                        ? `检测到 ${data.links.length} 个链接`
+                        : "检测到磁链",
+            });
+
+            // 同步更新暂存区 (draft 入库由 Toast 按钮触发)
+            stagingExpanded.set(data.links?.length > 1);
+        });
+
+        // 全局快捷键手动捕获（Ctrl+Shift+V）
+        window.electronAPI.onShortcutCapture?.(async () => {
+            let text = "";
+            try {
+                text = (await window.electronAPI.readClipboard?.()) || "";
+            } catch {
+                // 回退：浏览器 Clipboard API
+                try { text = await navigator.clipboard.readText(); } catch {}
+            }
+
+            if (text) {
+                const links = extractMagnetLinks(text);
+                if (links.length > 0) {
+                    showToast({
+                        type: "link-capture",
+                        persistent: true,
+                        links,
+                        sourceApp: "全局快捷键",
+                        message:
+                            links.length > 1
+                                ? `手动捕获 ${links.length} 个链接`
+                                : "手动捕获磁链",
+                    });
+                } else {
+                    showToast({
+                        type: "info",
+                        message: "剪贴板中未检测到链接",
+                    });
+                }
+            } else {
+                showToast({
+                    type: "info",
+                    message: "剪贴板为空或无法读取",
+                });
+            }
+        });
+
+        // 文件拖拽
+        window.electronAPI.onFileDropped?.(async (results) => {
+            for (const item of results) {
+                if (item.type === "torrent") {
+                    try {
+                        const result = await api.importTorrent({
+                            data: item.data,
+                            name: item.name,
+                            sourceApp: "文件拖拽",
+                        });
+                        if (result.created) {
+                            resources.refresh();
+                            showToast({
+                                type: "success",
+                                message: `种子 "${result.title}" 已导入`,
+                            });
+                        } else if (result.skipped) {
+                            showToast({
+                                type: "info",
+                                message: "该种子对应的资源已存在",
+                            });
+                        }
+                    } catch (err) {
+                        showToast({
+                            type: "error",
+                            message: `种子导入失败: ${err.message}`,
+                        });
+                    }
+                } else if (item.type === "text") {
+                    const links = extractMagnetLinks(item.data);
+                    if (links.length > 0) {
+                        showToast({
+                            type: "link-capture",
+                            persistent: true,
+                            links,
+                            sourceApp: "文件拖拽",
+                            message:
+                                links.length > 1
+                                    ? `从文件检测到 ${links.length} 个链接`
+                                    : "从文件检测到磁链",
+                        });
+                    }
+                }
+            }
+        });
+    }
+
+    // 浏览器回退：全局粘贴 — 非输入框聚焦时检测磁链（仅在无 Electron 环境时使用）
     async function handlePaste(e) {
+        // 如果已由 Electron 监控接管，跳过浏览器粘贴处理
+        if (window.electronAPI) return;
+
         const active = document.activeElement;
         const isInput =
             active &&
             (active.tagName === "INPUT" ||
                 active.tagName === "TEXTAREA" ||
                 active.isContentEditable);
-        if (isInput) return; // 正常粘贴到输入框
+        if (isInput) return;
 
-        // 优先用 Clipboard API，回退到 paste 事件
         let text = "";
         try {
             text = (await navigator.clipboard.readText()) || "";
@@ -42,49 +150,17 @@
 
         e.preventDefault();
 
-        try {
-            const result = await api.createResources({
-                links,
-                sourceApp: "浏览器",
-            });
-
-            let createdCount = 0;
-            let skippedCount = 0;
-            for (const r of result.results) {
-                if (r.created) {
-                    createdCount++;
-                    await api.updateResource(r.id, {
-                        status: "active",
-                    });
-                } else if (r.skipped) {
-                    skippedCount++;
-                }
-            }
-
-            resources.refresh();
-
-            if (createdCount > 0 && skippedCount > 0) {
-                showToast({
-                    type: "success",
-                    message: `成功添加 ${createdCount} 个资源，${skippedCount} 个已存在已跳过`,
-                });
-            } else if (createdCount > 0) {
-                showToast({
-                    type: "success",
-                    message: `成功添加 ${createdCount} 个资源`,
-                });
-            } else {
-                showToast({
-                    type: "info",
-                    message: `这 ${skippedCount} 个资源已存在，无需重复添加`,
-                });
-            }
-        } catch (err) {
-            showToast({
-                type: "error",
-                message: "添加失败: " + err.message,
-            });
-        }
+        // 浏览器环境：展示富交互 Toast
+        showToast({
+            type: "link-capture",
+            persistent: true,
+            links,
+            sourceApp: "浏览器",
+            message:
+                links.length > 1
+                    ? `检测到 ${links.length} 个链接`
+                    : "检测到磁链",
+        });
     }
 
     // 全局键盘快捷键
@@ -110,6 +186,7 @@
     }
 
     onMount(() => {
+        setupElectronClipboardListener();
         window.addEventListener("keydown", handleKeydown);
         window.addEventListener("paste", handlePaste);
         return () => {

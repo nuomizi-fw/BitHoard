@@ -187,7 +187,9 @@
                             <option value="Edge">Edge</option>
                             <option value="Firefox">Firefox</option>
                             <option value="Telegram">Telegram</option>
-                            <option value="文件资源管理器">文件资源管理器</option>
+                            <option value="文件资源管理器"
+                                >文件资源管理器</option
+                            >
                         </select>
                     </div>
 
