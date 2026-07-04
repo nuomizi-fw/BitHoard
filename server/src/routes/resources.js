@@ -9,6 +9,19 @@ import tmdbService from '../services/tmdb.js';
 const router = Router();
 
 /**
+ * 从磁链中提取显示名称
+ */
+function extractMagnetName(uri) {
+  const match = uri.match(/[?&]dn=([^&]+)/i);
+  if (!match) return null;
+  try {
+    return decodeURIComponent(match[1]).replace(/\+/g, ' ');
+  } catch {
+    return match[1].replace(/\+/g, ' ');
+  }
+}
+
+/**
  * 获取资源列表
  * GET /api/resources
  */
@@ -192,11 +205,12 @@ router.post('/', async (req, res) => {
     }
 
     const id = uuidv4();
+    const title = extractMagnetName(link.uri) || '未命名资源';
     await writeQueue.enqueue(() => {
       db.prepare(`
-        INSERT INTO resource (id, magnet_uri, source_app, source_process, status)
-        VALUES (?, ?, ?, ?, 'draft')
-      `).run(id, link.uri, sourceApp || 'unknown', sourceProcess || '');
+        INSERT INTO resource (id, magnet_uri, title, source_app, source_process, status)
+        VALUES (?, ?, ?, ?, ?, 'draft')
+      `).run(id, link.uri, title, sourceApp || 'unknown', sourceProcess || '');
     });
 
     results.push({ id, uri: link.uri, created: true });
