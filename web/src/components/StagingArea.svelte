@@ -16,6 +16,8 @@
             const result = await api.createResources({
                 links: [{ uri: res.magnet_uri, type: "magnet" }],
                 sourceApp: res.source_app || "暂存录入",
+                contextText: res.context_text || "",
+                suggestedTitle: res.suggested_title || res.title || undefined,
             });
             // 自动激活
             for (const r of result.results) {
@@ -45,6 +47,8 @@
                 const result = await api.createResources({
                     links: [{ uri: res.magnet_uri, type: "magnet" }],
                     sourceApp: res.source_app || "暂存录入",
+                    contextText: res.context_text || "",
+                    suggestedTitle: res.suggested_title || res.title || undefined,
                 });
                 for (const r of result.results) {
                     if (r.created) await api.updateResource(r.id, { status: "active" });

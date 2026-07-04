@@ -39,13 +39,26 @@
                 : "🔗";
 
     // 从链接提取默认标题
-    $: if (toast.links && toast.links[0]) {
-        const match = toast.links[0].uri.match(/dn=([^&]+)/);
-        if (match && !title) {
+    $: if (toast.links && toast.links[0] && !title) {
+        const link = toast.links[0];
+        // 1) 尝试 dn= 参数
+        const match = link.uri.match(/dn=([^&]+)/);
+        if (match) {
             try {
                 title = decodeURIComponent(match[1]).replace(/[+]/g, " ");
             } catch {
                 title = "";
+            }
+        }
+        // 2) 若无 dn=，尝试从上下文首行非噪音行获取
+        if (!title && toast.contextText) {
+            const lines = toast.contextText.split(/\r?\n/);
+            for (const line of lines) {
+                const t = line.trim();
+                if (t && !/^magnet:\?/.test(t) && !/^https?:\/\//.test(t) && !/^[a-fA-F0-9]{32,40}$/.test(t)) {
+                    title = t.substring(0, 120);
+                    break;
+                }
             }
         }
     }
@@ -56,6 +69,8 @@
             const result = await api.createResources({
                 links: toast.links,
                 sourceApp,
+                contextText: toast.contextText || "",
+                suggestedTitle: title || undefined,
             });
 
             // 更新标题和描述
@@ -85,6 +100,8 @@
             const result = await api.createResources({
                 links: toast.links,
                 sourceApp,
+                contextText: toast.contextText || "",
+                suggestedTitle: title || undefined,
             });
 
             for (const r of result.results) {
@@ -121,13 +138,15 @@
     async function handleStaging() {
         saving = true;
         try {
-            // 直接添加到暂存区，不创建资源
+            // 直接添加到暂存区，不创建资源（字段统一使用下划线风格）
             stagingResources.update(items => [
                 ...items,
                 ...(toast.links || []).map(link => ({
-                    magnetUri: link.uri,
+                    magnet_uri: link.uri,
                     title: title || "",
-                    source: sourceApp,
+                    source_app: sourceApp,
+                    context_text: toast.contextText || "",
+                    suggested_title: title || "",
                 }))
             ]);
             dispatch("dismiss");

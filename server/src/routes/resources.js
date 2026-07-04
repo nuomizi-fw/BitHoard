@@ -5,6 +5,7 @@ import writeQueue from '../database/write-queue.js';
 import sharp from 'sharp';
 import torrentParser from '../services/torrent-parser.js';
 import tmdbService from '../services/tmdb.js';
+import { extractCandidateTitle } from '../services/title-extractor.js';
 
 const router = Router();
 
@@ -245,9 +246,9 @@ router.post('/import-torrent', async (req, res) => {
 
   await writeQueue.enqueue(() => {
     db.prepare(`
-      INSERT INTO resource (id, magnet_uri, title, torrent_blob, total_size, source_app, status)
-      VALUES (?, ?, ?, ?, ?, ?, 'draft')
-    `).run(id, magnetUri, title, torrentBuf, totalSize, sourceApp || 'torrent-drag');
+      INSERT INTO resource (id, magnet_uri, title, torrent_blob, total_size, source_app, raw_context, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'draft')
+    `).run(id, magnetUri, title, torrentBuf, totalSize, sourceApp || 'torrent-drag', '');
   });
 
   // 缓存文件列表
@@ -268,9 +269,10 @@ router.post('/import-torrent', async (req, res) => {
 /**
  * 创建资源
  * POST /api/resources
+ * Body: { links: [{ uri, type }], sourceApp?, sourceProcess?, contextText?, suggestedTitle? }
  */
 router.post('/', async (req, res) => {
-  const { links, sourceApp, sourceProcess } = req.body;
+  const { links, sourceApp, sourceProcess, contextText, suggestedTitle } = req.body;
 
   if (!links || !Array.isArray(links)) {
     return res.status(400).json({ error: 'Links array required' });
@@ -288,15 +290,28 @@ router.post('/', async (req, res) => {
     }
 
     const id = uuidv4();
-    const title = extractMagnetName(link.uri) || '未命名资源';
+
+    // 标题提取优先级：前端传入 suggestedTitle > contextText 上下文解析 > dn= 参数 > 回退
+    let title;
+    if (link.title && link.title.trim()) {
+      title = link.title.trim();
+    } else if (suggestedTitle && suggestedTitle.trim()) {
+      title = suggestedTitle.trim();
+    } else if (contextText && contextText.trim()) {
+      const extracted = extractCandidateTitle(contextText, link.uri);
+      title = extracted.suggestedTitle;
+    } else {
+      title = extractMagnetName(link.uri) || '未命名资源';
+    }
+
     await writeQueue.enqueue(() => {
       db.prepare(`
-        INSERT INTO resource (id, magnet_uri, title, source_app, source_process, status)
-        VALUES (?, ?, ?, ?, ?, 'draft')
-      `).run(id, link.uri, title, sourceApp || 'unknown', sourceProcess || '');
+        INSERT INTO resource (id, magnet_uri, title, source_app, source_process, raw_context, status)
+        VALUES (?, ?, ?, ?, ?, ?, 'draft')
+      `).run(id, link.uri, title, sourceApp || 'unknown', sourceProcess || '', contextText || '');
     });
 
-    results.push({ id, uri: link.uri, created: true });
+    results.push({ id, uri: link.uri, created: true, suggestedTitle: title });
   }
 
   res.status(201).json({ results });

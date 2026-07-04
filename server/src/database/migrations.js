@@ -174,6 +174,13 @@ const migrations = [
       UPDATE resource SET description = '' WHERE description IS NULL;
     `,
   },
+  {
+    version: 3,
+    description: 'Add raw_context column for clipboard context text',
+    sql: `
+      ALTER TABLE resource ADD COLUMN raw_context TEXT DEFAULT '';
+    `,
+  },
 ];
 
 export function runMigrations(db) {

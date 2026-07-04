@@ -6,6 +6,8 @@ const PATTERNS = {
   magnet: /magnet:\?xt=urn:btih:[a-zA-Z0-9]{32,}/gi,
   torrentUrl: /https?:\/\/[^\s"'<>]+\.torrent/gi,
   ed2k: /ed2k:\/\/\|file\|[^|]+\|[a-fA-F0-9]{32}\|/gi,
+  // 纯 BTIH hash（32或40位十六进制），识别后自动构造 magnet URI
+  btihHash: /\b([a-fA-F0-9]{32,40})\b/g,
 };
 
 let lastClipboardText = '';
@@ -77,16 +79,33 @@ function getFriendlyAppName(processName) {
  */
 function extractLinks(text) {
   const links = [];
-  const seen = new Set();
+  const seenUri = new Set();
+  const seenHash = new Set();
 
+  // 提取标准 magnet / torrent / ed2k 链接
   for (const [type, pattern] of Object.entries(PATTERNS)) {
+    if (type === 'btihHash') continue; // 纯 hash 单独处理
     const matches = text.matchAll(pattern);
     for (const match of matches) {
       const uri = match[0];
-      if (!seen.has(uri)) {
-        seen.add(uri);
+      if (!seenUri.has(uri)) {
+        seenUri.add(uri);
         links.push({ type, uri });
+        // 记录已出现的 BTIH hash，避免后续纯 hash 重复
+        const hashMatch = uri.match(/btih:([a-fA-F0-9]{32,40})/i);
+        if (hashMatch) seenHash.add(hashMatch[1].toLowerCase());
       }
+    }
+  }
+
+  // 提取纯 BTIH hash，自动构造 magnet URI
+  const hashMatches = text.matchAll(PATTERNS.btihHash);
+  for (const match of hashMatches) {
+    const hash = match[1];
+    const lowerHash = hash.toLowerCase();
+    if (!seenHash.has(lowerHash)) {
+      seenHash.add(lowerHash);
+      links.push({ type: 'magnet', uri: `magnet:?xt=urn:btih:${lowerHash}` });
     }
   }
 
@@ -95,8 +114,10 @@ function extractLinks(text) {
 
 /**
  * 处理检测到的链接
+ * @param {Array} links - 提取到的链接列表
+ * @param {string} contextText - 完整的剪贴板文本，用于服务端上下文解析
  */
-function handleLinks(links) {
+function handleLinks(links, contextText) {
   if (links.length === 0) return;
 
   const sourceProcess = getForegroundWindowProcess();
@@ -106,6 +127,7 @@ function handleLinks(links) {
     links,
     sourceApp,
     sourceProcess,
+    contextText: contextText || '',
     timestamp: Date.now(),
   };
 
@@ -133,6 +155,9 @@ function checkClipboard() {
 
   if (batchTimer) clearTimeout(batchTimer);
 
+  // 保存当前文本用于上下文传递（闭包捕获，避免被后续轮询覆盖）
+  const capturedText = currentText;
+
   batchTimer = setTimeout(() => {
     const batch = [...batchBuffer];
     batchBuffer = [];
@@ -147,7 +172,7 @@ function checkClipboard() {
       }
     }
 
-    handleLinks(unique);
+    handleLinks(unique, capturedText);
   }, BATCH_WINDOW_MS);
 }
 

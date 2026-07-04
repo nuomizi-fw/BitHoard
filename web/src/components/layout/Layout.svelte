@@ -12,11 +12,31 @@
     import { resources } from "../../lib/stores/resources.js";
     import { api } from "../../lib/api.js";
 
-    // 检测文本中的磁链
+    // 检测文本中的磁链（含纯 BTIH hash 自动识别）
     function extractMagnetLinks(text) {
-        const re = /magnet:\?[^\s<>"]+/gi;
-        const matches = [...text.matchAll(re)];
-        return matches.map((m) => ({ uri: m[0], type: "magnet" }));
+        const results = [];
+        const seenHash = new Set();
+
+        // 1) 标准 magnet:? 链接
+        const magnetRe = /magnet:\?[^\s<>"]+/gi;
+        for (const m of text.matchAll(magnetRe)) {
+            results.push({ uri: m[0], type: "magnet" });
+            // 记录 BTIH 防重复
+            const h = m[0].match(/btih:([a-fA-F0-9]{32,40})/i);
+            if (h) seenHash.add(h[1].toLowerCase());
+        }
+
+        // 2) 纯 BTIH hash（32/40位十六进制），自动构造 magnet URI
+        const hashRe = /\b([a-fA-F0-9]{32,40})\b/g;
+        for (const m of text.matchAll(hashRe)) {
+            const lower = m[1].toLowerCase();
+            if (!seenHash.has(lower)) {
+                seenHash.add(lower);
+                results.push({ uri: `magnet:?xt=urn:btih:${lower}`, type: "magnet" });
+            }
+        }
+
+        return results;
     }
 
     // Electron IPC: 监听剪贴板监控推送
@@ -31,6 +51,7 @@
                 links: data.links || [],
                 sourceApp: data.sourceApp || "unknown",
                 sourceProcess: data.sourceProcess || "",
+                contextText: data.contextText || "",
                 message:
                     data.links?.length > 1
                         ? `检测到 ${data.links.length} 个链接`
@@ -59,6 +80,7 @@
                         persistent: true,
                         links,
                         sourceApp: "全局快捷键",
+                        contextText: text,
                         message:
                             links.length > 1
                                 ? `手动捕获 ${links.length} 个链接`
@@ -114,6 +136,7 @@
                             persistent: true,
                             links,
                             sourceApp: "文件拖拽",
+                            contextText: item.data,
                             message:
                                 links.length > 1
                                     ? `从文件检测到 ${links.length} 个链接`
@@ -156,6 +179,7 @@
             persistent: true,
             links,
             sourceApp: "浏览器",
+            contextText: text,
             message:
                 links.length > 1
                     ? `检测到 ${links.length} 个链接`

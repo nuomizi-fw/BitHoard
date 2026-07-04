@@ -89,11 +89,28 @@
     }
 
     function extractMagnetLinks(text) {
-        const re = /magnet:\?[^\s<>"]+/gi;
-        return [...text.matchAll(re)].map((m) => ({
-            uri: m[0],
-            type: "magnet",
-        }));
+        const results = [];
+        const seenHash = new Set();
+
+        // 1) 标准 magnet:? 链接
+        const magnetRe = /magnet:\?[^\s<>"]+/gi;
+        for (const m of text.matchAll(magnetRe)) {
+            results.push({ uri: m[0], type: "magnet" });
+            const h = m[0].match(/btih:([a-fA-F0-9]{32,40})/i);
+            if (h) seenHash.add(h[1].toLowerCase());
+        }
+
+        // 2) 纯 BTIH hash
+        const hashRe = /\b([a-fA-F0-9]{32,40})\b/g;
+        for (const m of text.matchAll(hashRe)) {
+            const lower = m[1].toLowerCase();
+            if (!seenHash.has(lower)) {
+                seenHash.add(lower);
+                results.push({ uri: `magnet:?xt=urn:btih:${lower}`, type: "magnet" });
+            }
+        }
+
+        return results;
     }
 
     async function handleAddResources() {
@@ -114,6 +131,7 @@
                 source_app: "手动录入",
                 title: "",
                 status: "draft",
+                context_text: pasteText,
                 _ts: Date.now(),
             })),
         ]);
