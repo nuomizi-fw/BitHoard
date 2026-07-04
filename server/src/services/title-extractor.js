@@ -36,7 +36,8 @@ function cleanTitle(raw) {
   // 去除磁链、URL
   t = t.replace(/magnet:\?[^\s]+/gi, '');
   t = t.replace(/https?:\/\/[^\s]+/gi, '');
-  t = t.replace(/\b[a-fA-F0-9]{32,40}\b/g, '');
+  t = t.replace(/\b[a-fA-F0-9]{40}\b/g, '');
+  t = t.replace(/\b[A-Z2-7a-z2-7]{32}\b/gi, '');
 
   // 去除常见的序列号/集数前缀残渣（保留有意义的标题部分）
   t = t.replace(/[<>"']/g, '');
@@ -60,8 +61,9 @@ function isNoiseLine(line) {
   if (/^magnet:\?/.test(trimmed)) return true;
   // 纯 URL
   if (/^https?:\/\//.test(trimmed)) return true;
-  // 纯 hash
-  if (/^[a-fA-F0-9]{32,40}$/.test(trimmed)) return true;
+  // 纯 hash（十六进制或 Base32）
+  if (/^[a-fA-F0-9]{40}$/.test(trimmed)) return true;
+  if (/^[A-Z2-7a-z2-7]{32}$/i.test(trimmed)) return true;
   // 纯分隔符
   if (/^[-=*_#~]{3,}$/.test(trimmed)) return true;
   return false;
@@ -89,7 +91,7 @@ export function extractCandidateTitle(contextText, magnetUri) {
   }
 
   // 2) 从 BTIH hash 中提取 hash 值，在上下文中定位其所在行
-  const hashMatch = magnetUri.match(/btih:([a-fA-F0-9]{32,40})/i);
+  const hashMatch = magnetUri.match(/btih:([a-fA-F0-9]{40}|[A-Z2-7a-z2-7]{32})/i);
   const hash = hashMatch ? hashMatch[1] : null;
 
   const lines = contextText.split(/\r?\n/);

@@ -6,8 +6,12 @@ const PATTERNS = {
   magnet: /magnet:\?xt=urn:btih:[a-zA-Z0-9]{32,}/gi,
   torrentUrl: /https?:\/\/[^\s"'<>]+\.torrent/gi,
   ed2k: /ed2k:\/\/\|file\|[^|]+\|[a-fA-F0-9]{32}\|/gi,
-  // 纯 BTIH hash（32或40位十六进制），识别后自动构造 magnet URI
-  btihHash: /\b([a-fA-F0-9]{32,40})\b/g,
+  // 纯 BTIH hash（40位十六进制），识别后自动构造 magnet URI
+  btihHash: /\b([a-fA-F0-9]{40})\b/g,
+  // Base32 编码的 BTIH hash（32位，字符集 A-Z2-7）
+  btihBase32: /\b([A-Z2-7a-z2-7]{32})\b/g,
+  // 截断磁链：hash&dn=xxx&xl=xxx 格式（缺少 magnet:?xt=urn:btih: 前缀）
+  truncatedMagnet: /\b([A-Z2-7a-z2-7]{32}|[a-fA-F0-9]{40})(?:&[a-z]+=[^&\s<>"]+)+\b/gi,
 };
 
 let lastClipboardText = '';
@@ -84,7 +88,7 @@ function extractLinks(text) {
 
   // 提取标准 magnet / torrent / ed2k 链接
   for (const [type, pattern] of Object.entries(PATTERNS)) {
-    if (type === 'btihHash') continue; // 纯 hash 单独处理
+    if (type === 'btihHash' || type === 'btihBase32' || type === 'truncatedMagnet') continue; // 单独处理
     const matches = text.matchAll(pattern);
     for (const match of matches) {
       const uri = match[0];
@@ -92,13 +96,36 @@ function extractLinks(text) {
         seenUri.add(uri);
         links.push({ type, uri });
         // 记录已出现的 BTIH hash，避免后续纯 hash 重复
-        const hashMatch = uri.match(/btih:([a-fA-F0-9]{32,40})/i);
+        const hashMatch = uri.match(/btih:([a-fA-F0-9]{40}|[A-Z2-7a-z2-7]{32})/i);
         if (hashMatch) seenHash.add(hashMatch[1].toLowerCase());
       }
     }
   }
 
-  // 提取纯 BTIH hash，自动构造 magnet URI
+  // 提取截断磁链（hash&dn=xxx&xl=xxx），补全为完整 magnet URI
+  const truncatedMatches = text.matchAll(PATTERNS.truncatedMagnet);
+  for (const match of truncatedMatches) {
+    const uri = 'magnet:?xt=urn:btih:' + match[0];
+    if (!seenUri.has(uri)) {
+      seenUri.add(uri);
+      links.push({ type: 'magnet', uri });
+      const hashMatch = uri.match(/btih:([a-fA-F0-9]{40}|[A-Z2-7a-z2-7]{32})/i);
+      if (hashMatch) seenHash.add(hashMatch[1].toLowerCase());
+    }
+  }
+
+  // 提取纯 Base32 BTIH hash，自动构造 magnet URI
+  const base32Matches = text.matchAll(PATTERNS.btihBase32);
+  for (const match of base32Matches) {
+    const hash = match[1];
+    const lowerHash = hash.toLowerCase();
+    if (!seenHash.has(lowerHash)) {
+      seenHash.add(lowerHash);
+      links.push({ type: 'magnet', uri: `magnet:?xt=urn:btih:${lowerHash}` });
+    }
+  }
+
+  // 提取纯十六进制 BTIH hash，自动构造 magnet URI
   const hashMatches = text.matchAll(PATTERNS.btihHash);
   for (const match of hashMatches) {
     const hash = match[1];

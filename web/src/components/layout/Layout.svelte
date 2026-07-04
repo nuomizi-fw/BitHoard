@@ -21,13 +21,32 @@
         const magnetRe = /magnet:\?[^\s<>"]+/gi;
         for (const m of text.matchAll(magnetRe)) {
             results.push({ uri: m[0], type: "magnet" });
-            // 记录 BTIH 防重复
-            const h = m[0].match(/btih:([a-fA-F0-9]{32,40})/i);
+            // 记录 BTIH 防重复（支持十六进制和 Base32）
+            const h = m[0].match(/btih:([a-fA-F0-9]{40}|[A-Z2-7a-z2-7]{32})/i);
             if (h) seenHash.add(h[1].toLowerCase());
         }
 
-        // 2) 纯 BTIH hash（32/40位十六进制），自动构造 magnet URI
-        const hashRe = /\b([a-fA-F0-9]{32,40})\b/g;
+        // 2) 截断磁链（hash&dn=xxx&xl=xxx），补全为完整 magnet URI
+        const truncatedRe = /\b([A-Z2-7a-z2-7]{32}|[a-fA-F0-9]{40})(?:&[a-z]+=[^&\s<>"]+)+\b/gi;
+        for (const m of text.matchAll(truncatedRe)) {
+            const uri = "magnet:?xt=urn:btih:" + m[0];
+            results.push({ uri, type: "magnet" });
+            const h = uri.match(/btih:([a-fA-F0-9]{40}|[A-Z2-7a-z2-7]{32})/i);
+            if (h) seenHash.add(h[1].toLowerCase());
+        }
+
+        // 3) 纯 Base32 BTIH hash（32位），自动构造 magnet URI
+        const base32Re = /\b([A-Z2-7a-z2-7]{32})\b/g;
+        for (const m of text.matchAll(base32Re)) {
+            const lower = m[1].toLowerCase();
+            if (!seenHash.has(lower)) {
+                seenHash.add(lower);
+                results.push({ uri: `magnet:?xt=urn:btih:${lower}`, type: "magnet" });
+            }
+        }
+
+        // 4) 纯十六进制 BTIH hash（40位），自动构造 magnet URI
+        const hashRe = /\b([a-fA-F0-9]{40})\b/g;
         for (const m of text.matchAll(hashRe)) {
             const lower = m[1].toLowerCase();
             if (!seenHash.has(lower)) {
