@@ -183,4 +183,8 @@ export const api = {
 
   qbFetchMetadata: (resourceId) =>
     request(`/qbittorrent/fetch-metadata/${resourceId}`, { method: 'POST' }).then(r => r.json()),
+
+  // File Cache
+  refreshFileCache: (resourceId) =>
+    request(`/resources/${resourceId}/refresh-files`, { method: 'POST' }).then(r => r.json()),
 };

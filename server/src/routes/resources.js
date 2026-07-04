@@ -30,9 +30,15 @@ router.get('/', (req, res) => {
   const {
     status, category, rating_min, rating_max,
     is_deleted, search, tag, group,
+    source_app, has_download,
     sort = 'created_at', order = 'desc',
     page = 1, limit = 50,
   } = req.query;
+
+  // 排序字段白名单
+  const ALLOWED_SORTS = ['created_at', 'updated_at', 'title', 'rating', 'total_size', 'status', 'category'];
+  const safeSort = ALLOWED_SORTS.includes(sort) ? sort : 'created_at';
+  const safeOrder = order.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
 
   const offset = (parseInt(page) - 1) * parseInt(limit);
   const conditions = [];
@@ -70,19 +76,29 @@ router.get('/', (req, res) => {
     conditions.push('r.id IN (SELECT resource_id FROM resource_group WHERE group_id = @group)');
     params.group = group;
   }
+  if (source_app) {
+    conditions.push('r.source_app = @source_app');
+    params.source_app = source_app;
+  }
+  if (has_download === '1') {
+    conditions.push('r.id IN (SELECT resource_id FROM download)');
+  }
+  if (has_download === '0') {
+    conditions.push('r.id NOT IN (SELECT resource_id FROM download)');
+  }
 
   const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
-  const sortOrder = order.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
 
   const countSql = `SELECT COUNT(*) as total FROM resource r ${whereClause}`;
   const { total } = db.prepare(countSql).get(params);
 
   const sql = `
     SELECT r.*,
-      (SELECT COUNT(*) FROM screenshot WHERE resource_id = r.id) as screenshot_count
+      (SELECT COUNT(*) FROM screenshot WHERE resource_id = r.id) as screenshot_count,
+      (SELECT id FROM screenshot WHERE resource_id = r.id ORDER BY "order" LIMIT 1) as first_screenshot_id
     FROM resource r
     ${whereClause}
-    ORDER BY r.${sort} ${sortOrder}
+    ORDER BY r.${safeSort} ${safeOrder}
     LIMIT @limit OFFSET @offset
   `;
   const resources = db.prepare(sql).all({ ...params, limit: parseInt(limit), offset });
@@ -494,6 +510,43 @@ router.post('/:id/cache-files', (req, res) => {
       VALUES (?, ?, ?, ?, ?)
     `);
 
+    for (const file of parsed.files) {
+      insert.run(uuidv4(), id, file.path, file.size, file.index);
+    }
+  })();
+
+  res.json({
+    name: parsed.name,
+    totalSize: parsed.totalSize,
+    fileCount: parsed.files.length,
+    files: parsed.files,
+  });
+});
+
+/**
+ * 刷新文件缓存
+ * POST /api/resources/:id/refresh-files
+ */
+router.post('/:id/refresh-files', (req, res) => {
+  const db = getDb();
+  const { id } = req.params;
+
+  const resource = db.prepare('SELECT torrent_blob FROM resource WHERE id = ?').get(id);
+  if (!resource || !resource.torrent_blob) {
+    return res.status(400).json({ error: 'No cached torrent file to parse' });
+  }
+
+  const parsed = torrentParser.parse(resource.torrent_blob);
+  if (!parsed) {
+    return res.status(400).json({ error: 'Failed to parse torrent' });
+  }
+
+  db.transaction(() => {
+    db.prepare('DELETE FROM file_cache WHERE resource_id = ?').run(id);
+    const insert = db.prepare(`
+      INSERT INTO file_cache (id, resource_id, file_path, file_size, file_index)
+      VALUES (?, ?, ?, ?, ?)
+    `);
     for (const file of parsed.files) {
       insert.run(uuidv4(), id, file.path, file.size, file.index);
     }

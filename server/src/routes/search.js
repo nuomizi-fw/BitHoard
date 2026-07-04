@@ -28,7 +28,7 @@ router.get('/', (req, res) => {
     const { total } = db.prepare(countSql).get({ q: `%${q}%` });
 
     const sql = `
-      SELECT r.*, (SELECT COUNT(*) FROM screenshot WHERE resource_id = r.id) as screenshot_count
+      SELECT r.*, (SELECT COUNT(*) FROM screenshot WHERE resource_id = r.id) as screenshot_count, (SELECT id FROM screenshot WHERE resource_id = r.id ORDER BY "order" LIMIT 1) as first_screenshot_id
       FROM resource r
       WHERE r.is_deleted = 0 AND (
         r.title LIKE @q OR r.description LIKE @q OR r.magnet_uri LIKE @q OR r.review LIKE @q
@@ -123,7 +123,7 @@ router.post('/advanced', (req, res) => {
   const { total } = db.prepare(countSql).get(params);
 
   const sql = `
-    SELECT r.*, (SELECT COUNT(*) FROM screenshot WHERE resource_id = r.id) as screenshot_count
+    SELECT r.*, (SELECT COUNT(*) FROM screenshot WHERE resource_id = r.id) as screenshot_count, (SELECT id FROM screenshot WHERE resource_id = r.id ORDER BY "order" LIMIT 1) as first_screenshot_id
     FROM resource r
     ${whereClause}
     ORDER BY r.${sort} ${sortOrder}

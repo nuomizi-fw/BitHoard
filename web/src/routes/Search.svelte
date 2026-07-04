@@ -15,13 +15,19 @@
 <script>
     import { onMount } from "svelte";
     import { api } from "../lib/api.js";
-    import { Search, SlidersHorizontal, X } from "lucide-svelte";
+    import { Search, SlidersHorizontal, X, ChevronLeft, ChevronRight } from "lucide-svelte";
     import SearchBar from "../components/SearchBar.svelte";
 
     let query = "";
     let results = null;
     let loading = false;
     let showAdvanced = false;
+
+    // 分页
+    const PAGE_SIZE = 20;
+    let currentPage = 1;
+    let totalPages = 1;
+    let lastSearchMode = ""; // "simple" or "advanced"
 
     // 高级筛选
     let filters = {
@@ -44,35 +50,48 @@
         "未知",
     ];
 
-    async function doSearch() {
+    async function doSearch(page = 1) {
         if (!query.trim()) return;
         loading = true;
+        currentPage = page;
+        lastSearchMode = "simple";
         try {
             const res = await api.search(query);
             results = res;
+            if (res.resources) {
+                totalPages = Math.max(1, Math.ceil((res.resources.total || 0) / PAGE_SIZE));
+            }
         } catch (e) {
             console.error(e);
         }
         loading = false;
     }
 
-    async function doAdvancedSearch() {
+    async function doAdvancedSearch(page = 1) {
         loading = true;
+        currentPage = page;
+        lastSearchMode = "advanced";
         try {
             const active = Object.fromEntries(
                 Object.entries(filters).filter(
                     ([, v]) => v !== "" && v !== null && v !== 0,
                 ),
             );
-            const res = await api.advancedSearch({ q: query, ...active });
+            const res = await api.advancedSearch({ q: query, ...active, page, limit: PAGE_SIZE });
             results = {
                 resources: { items: res.items, total: res.total },
                 files: null,
             };
+            totalPages = Math.max(1, Math.ceil((res.total || 0) / PAGE_SIZE));
         } catch (e) {
             console.error(e);
         }
         loading = false;
+    }
+
+    function goPage(page) {
+        if (lastSearchMode === "advanced") doAdvancedSearch(page);
+        else doSearch(page);
     }
 
     function clearFilters() {
@@ -260,6 +279,19 @@
                         {/each}
                     </div>
                 </section>
+            {/if}
+
+            <!-- 分页 -->
+            {#if totalPages > 1 && results.resources}
+                <div class="pagination">
+                    <button disabled={currentPage <= 1} on:click={() => goPage(currentPage - 1)}>
+                        <ChevronLeft size={16} />
+                    </button>
+                    <span class="page-info">{currentPage} / {totalPages} (共 {results.resources.total || 0} 条)</span>
+                    <button disabled={currentPage >= totalPages} on:click={() => goPage(currentPage + 1)}>
+                        <ChevronRight size={16} />
+                    </button>
+                </div>
             {/if}
         {:else}
             <div class="empty-hint">
@@ -492,4 +524,27 @@
     .empty-hint p {
         font-size: 14px;
     }
+
+    .pagination {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 16px;
+        padding: 20px 0;
+    }
+
+    .pagination button {
+        background: #2a2a2a;
+        border: none;
+        color: #aaa;
+        cursor: pointer;
+        padding: 8px;
+        border-radius: 8px;
+        display: flex;
+    }
+
+    .pagination button:hover:not(:disabled) { background: #3a3a3a; color: #fff; }
+    .pagination button:disabled { opacity: 0.3; cursor: default; }
+
+    .page-info { font-size: 13px; color: #888; }
 </style>

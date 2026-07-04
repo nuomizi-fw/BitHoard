@@ -9,6 +9,9 @@
         Trash2,
         Tag,
         FolderOpen,
+        Plus,
+        X,
+        RefreshCw,
     } from "lucide-svelte";
     import { showToast } from "../lib/stores/ui.js";
 
@@ -20,20 +23,40 @@
     let editDescription = "";
     let editRating = 0;
     let editReview = "";
+    let editStatus = "";
+    let editCategory = "";
+
+    // 标签管理
+    let allTags = [];
+    let newTagName = "";
+    let newTagColor = "#6366f1";
+    let showTagInput = false;
 
     onMount(async () => {
         try {
             resource = await api.getResource(id);
-            editTitle = resource.title || "";
-            editDescription = resource.description || "";
-            editRating = resource.rating || 0;
-            editReview = resource.review || "";
+            syncEditFields();
+            allTags = await api.getTags();
         } catch (err) {
             showToast({ type: "error", message: "加载失败" });
         } finally {
             loading = false;
         }
     });
+
+    function syncEditFields() {
+        editTitle = resource.title || "";
+        editDescription = resource.description || "";
+        editRating = resource.rating || 0;
+        editReview = resource.review || "";
+        editStatus = resource.status || "draft";
+        editCategory = resource.category || "";
+    }
+
+    function startEditing() {
+        syncEditFields();
+        editing = true;
+    }
 
     async function saveEdit() {
         try {
@@ -42,12 +65,14 @@
                 description: editDescription,
                 rating: editRating,
                 review: editReview,
+                status: editStatus,
+                category: editCategory,
             });
             resource = await api.getResource(id);
             editing = false;
             showToast({ type: "info", message: "已保存" });
         } catch (err) {
-            showToast({ type: "error", message: "保存失败" });
+            showToast({ type: "error", message: "保存失败: " + err.message });
         }
     }
 
@@ -84,6 +109,54 @@
         }
     }
 
+    // 标签操作
+    async function addTag(tagId) {
+        try {
+            await api.addTagToResource(id, tagId);
+            resource = await api.getResource(id);
+        } catch (err) {
+            showToast({ type: "error", message: "添加标签失败" });
+        }
+    }
+
+    async function removeTag(tagId) {
+        try {
+            await api.removeTagFromResource(id, tagId);
+            resource = await api.getResource(id);
+        } catch (err) {
+            showToast({ type: "error", message: "移除标签失败" });
+        }
+    }
+
+    async function createAndAddTag() {
+        if (!newTagName.trim()) return;
+        try {
+            const tag = await api.createTag(newTagName.trim(), newTagColor);
+            await api.addTagToResource(id, tag.id);
+            allTags = await api.getTags();
+            resource = await api.getResource(id);
+            newTagName = "";
+            showTagInput = false;
+            showToast({ type: "info", message: "标签已创建并添加" });
+        } catch (err) {
+            showToast({ type: "error", message: "创建标签失败" });
+        }
+    }
+
+    async function refreshFileCache() {
+        try {
+            await api.refreshFileCache(id);
+            resource = await api.getResource(id);
+            showToast({ type: "info", message: "文件缓存已刷新" });
+        } catch (err) {
+            showToast({ type: "error", message: "刷新失败" });
+        }
+    }
+
+    // 当前资源已关联的 tag ids
+    $: resourceTagIds = new Set((resource?.tags || []).map(t => t.id));
+    $: availableTags = allTags.filter(t => !resourceTagIds.has(t.id));
+
     function formatSize(bytes) {
         if (!bytes) return "0 B";
         const units = ["B", "KB", "MB", "GB", "TB"];
@@ -95,6 +168,10 @@
         }
         return `${size.toFixed(1)} ${units[i]}`;
     }
+
+    const statusLabels = { draft: "待完善", active: "已入库", downloaded: "已下载" };
+    const categoryOptions = ["", "movie", "tv", "anime", "music", "game", "software", "book", "other"];
+    const categoryLabels = { "": "未分类", movie: "电影", tv: "电视剧", anime: "动画", music: "音乐", game: "游戏", software: "软件", book: "书籍", other: "其他" };
 </script>
 
 {#if loading}
@@ -119,11 +196,23 @@
                 <div class="header-meta">
                     <span class="source">来源: {resource.source_app}</span>
                     <span class="separator">·</span>
-                    <span>{resource.category}</span>
-                    <span class="separator">·</span>
-                    <span class={`status ${resource.status}`}
-                        >{resource.status}</span
-                    >
+                    {#if editing}
+                        <select bind:value={editStatus} class="inline-select">
+                            {#each Object.entries(statusLabels) as [val, label]}
+                                <option value={val}>{label}</option>
+                            {/each}
+                        </select>
+                        <span class="separator">·</span>
+                        <select bind:value={editCategory} class="inline-select">
+                            {#each categoryOptions as cat}
+                                <option value={cat}>{categoryLabels[cat]}</option>
+                            {/each}
+                        </select>
+                    {:else}
+                        <span>{resource.category || "未分类"}</span>
+                        <span class="separator">·</span>
+                        <span class={`status ${resource.status}`}>{statusLabels[resource.status] || resource.status}</span>
+                    {/if}
                 </div>
             </div>
             <div class="header-actions">
@@ -139,10 +228,7 @@
                         class="btn btn-secondary">取消</button
                     >
                 {:else}
-                    <button
-                        on:click={() => (editing = true)}
-                        class="btn btn-secondary">编辑</button
-                    >
+                    <button on:click={startEditing} class="btn btn-secondary">编辑</button>
                 {/if}
                 <button on:click={handleDelete} class="btn btn-danger"
                     ><Trash2 size={16} /></button
@@ -233,25 +319,6 @@
                     </div>
                 </section>
 
-                <!-- 文件列表 -->
-                {#if resource.files?.length > 0}
-                    <section class="section">
-                        <h3>文件列表 ({resource.files.length})</h3>
-                        <div class="file-list">
-                            {#each resource.files as file}
-                                <div class="file-item">
-                                    <span class="file-path"
-                                        >{file.file_path}</span
-                                    >
-                                    <span class="file-size"
-                                        >{formatSize(file.file_size)}</span
-                                    >
-                                </div>
-                            {/each}
-                        </div>
-                    </section>
-                {/if}
-
                 <!-- 标签 -->
                 <section class="section">
                     <h3>标签</h3>
@@ -262,10 +329,67 @@
                                 style="background: {tag.color}22; color: {tag.color}; border-color: {tag.color}44;"
                             >
                                 {tag.name}
+                                <button class="tag-remove" on:click={() => removeTag(tag.id)} title="移除标签"><X size={10} /></button>
                             </span>
                         {/each}
+                        {#if (resource.tags || []).length === 0}
+                            <span class="no-tags">暂无标签</span>
+                        {/if}
                     </div>
+
+                    <!-- 添加已有标签 -->
+                    {#if availableTags.length > 0}
+                        <div class="add-tag-section">
+                            <span class="add-tag-label">添加标签:</span>
+                            <div class="available-tags">
+                                {#each availableTags as tag}
+                                    <button
+                                        class="tag tag-addable"
+                                        style="background: {tag.color}18; color: {tag.color}; border-color: {tag.color}33;"
+                                        on:click={() => addTag(tag.id)}
+                                        title="点击添加"
+                                    >
+                                        + {tag.name}
+                                    </button>
+                                {/each}
+                            </div>
+                        </div>
+                    {/if}
+
+                    <!-- 新建标签 -->
+                    {#if showTagInput}
+                        <div class="new-tag-form">
+                            <input type="text" bind:value={newTagName} placeholder="标签名" class="tag-name-input" />
+                            <input type="color" bind:value={newTagColor} class="tag-color-input" />
+                            <button class="btn btn-sm btn-primary" on:click={createAndAddTag}>创建</button>
+                            <button class="btn btn-sm btn-secondary" on:click={() => { showTagInput = false; newTagName = ''; }}>取消</button>
+                        </div>
+                    {:else}
+                        <button class="btn-new-tag" on:click={() => (showTagInput = true)}>
+                            <Plus size={12} /> 新建标签
+                        </button>
+                    {/if}
                 </section>
+
+                <!-- 文件列表 -->
+                {#if resource.files?.length > 0}
+                    <section class="section">
+                        <div class="section-header">
+                            <h3>文件列表 ({resource.files.length})</h3>
+                            <button class="btn btn-sm btn-secondary" on:click={refreshFileCache} title="刷新文件缓存">
+                                <RefreshCw size={14} /> 刷新
+                            </button>
+                        </div>
+                        <div class="file-list">
+                            {#each resource.files as file}
+                                <div class="file-item">
+                                    <span class="file-path">{file.file_path}</span>
+                                    <span class="file-size">{formatSize(file.file_size)}</span>
+                                </div>
+                            {/each}
+                        </div>
+                    </section>
+                {/if}
             </div>
 
             <div class="detail-sidebar">
@@ -561,4 +685,127 @@
         font-style: italic;
         color: #888;
     }
+
+    .inline-select {
+        background: #1a1a1a;
+        border: 1px solid #333;
+        border-radius: 4px;
+        color: #e0e0e0;
+        padding: 2px 8px;
+        font-size: 13px;
+        outline: none;
+        cursor: pointer;
+    }
+
+    .inline-select:focus { border-color: #6366f1; }
+
+    .tag-remove {
+        background: none;
+        border: none;
+        color: inherit;
+        cursor: pointer;
+        opacity: 0.5;
+        padding: 0 0 0 4px;
+        display: inline-flex;
+    }
+
+    .tag-remove:hover { opacity: 1; }
+
+    .add-tag-section {
+        margin-top: 10px;
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        flex-wrap: wrap;
+    }
+
+    .add-tag-label {
+        font-size: 12px;
+        color: #666;
+        padding-top: 4px;
+    }
+
+    .available-tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+    }
+
+    .tag-addable {
+        cursor: pointer;
+        transition: opacity 0.15s;
+    }
+
+    .tag-addable:hover { opacity: 0.7; }
+
+    .no-tags { font-size: 12px; color: #555; }
+
+    .new-tag-form {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        margin-top: 10px;
+    }
+
+    .tag-name-input {
+        background: #1a1a1a;
+        border: 1px solid #333;
+        border-radius: 6px;
+        color: #e0e0e0;
+        padding: 5px 10px;
+        font-size: 13px;
+        width: 120px;
+        outline: none;
+    }
+
+    .tag-name-input:focus { border-color: #6366f1; }
+
+    .tag-color-input {
+        width: 32px;
+        height: 32px;
+        border: 1px solid #333;
+        border-radius: 6px;
+        cursor: pointer;
+        background: none;
+        padding: 2px;
+    }
+
+    .btn-new-tag {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        background: none;
+        border: 1px dashed #333;
+        color: #666;
+        padding: 5px 12px;
+        border-radius: 6px;
+        font-size: 12px;
+        cursor: pointer;
+        margin-top: 10px;
+    }
+
+    .btn-new-tag:hover { border-color: #6366f1; color: #6366f1; }
+
+    .btn-sm {
+        padding: 5px 12px;
+        font-size: 12px;
+        border-radius: 6px;
+        border: none;
+        cursor: pointer;
+    }
+
+    .section-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+
+    .section-header h3 { margin-bottom: 0; }
+
+    .btn { display: inline-flex; align-items: center; gap: 6px; }
+
+    .btn-primary { background: #6366f1; color: white; }
+    .btn-primary:hover { background: #5558e6; }
+    .btn-secondary { background: #2a2a2a; color: #aaa; }
+    .btn-secondary:hover { background: #3a3a3a; color: #fff; }
 </style>

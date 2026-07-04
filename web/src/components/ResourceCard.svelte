@@ -25,8 +25,8 @@
     $: statusClass = resource.status;
 
     $: screenshotUrl =
-        resource.screenshot_count > 0
-            ? api.getScreenshotUrl(resource.id, resource.id) // placeholder, will need first screenshot id
+        resource.screenshot_count > 0 && resource.first_screenshot_id
+            ? api.getScreenshotUrl(resource.id, resource.first_screenshot_id)
             : null;
 
     function formatDate(dateStr) {

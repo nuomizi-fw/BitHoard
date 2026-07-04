@@ -1,31 +1,74 @@
 <script>
     import { onMount } from "svelte";
-    import { resources } from "../lib/stores/resources.js";
+    import { resources, stagingResources } from "../lib/stores/resources.js";
     import { viewMode } from "../lib/stores/ui.js";
     import ResourceCard from "../components/ResourceCard.svelte";
     import SearchBar from "../components/SearchBar.svelte";
     import { api } from "../lib/api.js";
     import { showToast } from "../lib/stores/ui.js";
-    import { LayoutGrid, List, Plus, X } from "lucide-svelte";
+    import {
+        LayoutGrid, List, Plus, X,
+        ChevronLeft, ChevronRight,
+        Filter, ArrowUpDown,
+    } from "lucide-svelte";
 
     let loading = true;
     let showAddDialog = false;
+    let showFilters = false;
     let pasteText = "";
     let adding = false;
 
+    // 筛选状态
+    let filterStatus = "";
+    let filterCategory = "";
+    let sortField = "created_at";
+    let sortOrder = "desc";
+
+    const PAGE_SIZE = 30;
+    let currentPage = 1;
+
     onMount(() => {
-        resources
-            .fetch({ is_deleted: 0, limit: 50 })
-            .finally(() => (loading = false));
+        loadResources();
     });
+
+    function buildParams(page = 1) {
+        const p = { is_deleted: 0, limit: PAGE_SIZE, page, sort: sortField, order: sortOrder };
+        if (filterStatus) p.status = filterStatus;
+        if (filterCategory) p.category = filterCategory;
+        return p;
+    }
+
+    async function loadResources(page = 1) {
+        loading = true;
+        currentPage = page;
+        try {
+            await resources.fetch(buildParams(page));
+        } finally {
+            loading = false;
+        }
+    }
+
+    $: totalPages = Math.max(1, Math.ceil($resources.total / PAGE_SIZE));
 
     function handleSearch(e) {
         const q = e.detail || e.target?.value;
         if (q) {
-            resources.fetch({ search: q, is_deleted: 0 });
+            resources.fetch({ search: q, is_deleted: 0, limit: PAGE_SIZE });
         } else {
-            resources.fetch({ is_deleted: 0 });
+            loadResources(1);
         }
+    }
+
+    function applyFilters() {
+        loadResources(1);
+    }
+
+    function clearFilters() {
+        filterStatus = "";
+        filterCategory = "";
+        sortField = "created_at";
+        sortOrder = "desc";
+        loadResources(1);
     }
 
     function extractMagnetLinks(text) {
@@ -46,50 +89,21 @@
             return;
         }
 
-        adding = true;
-        try {
-            const result = await api.createResources({
-                links,
-                sourceApp: "手动录入",
-            });
+        // 推入暂存区
+        stagingResources.update(items => [
+            ...items,
+            ...links.map(l => ({
+                magnet_uri: l.uri,
+                source_app: "手动录入",
+                title: "",
+                status: "draft",
+                _ts: Date.now(),
+            })),
+        ]);
 
-            let createdCount = 0;
-            let skippedCount = 0;
-            for (const r of result.results) {
-                if (r.created) {
-                    createdCount++;
-                    await api.updateResource(r.id, { status: "active" });
-                } else if (r.skipped) {
-                    skippedCount++;
-                }
-            }
-
-            resources.refresh();
-
-            if (createdCount > 0 && skippedCount > 0) {
-                showToast({
-                    type: "success",
-                    message: `成功添加 ${createdCount} 个资源，${skippedCount} 个已存在已跳过`,
-                });
-            } else if (createdCount > 0) {
-                showToast({
-                    type: "success",
-                    message: `成功添加 ${createdCount} 个资源`,
-                });
-            } else {
-                showToast({
-                    type: "info",
-                    message: `这 ${skippedCount} 个资源已存在，无需重复添加`,
-                });
-            }
-
-            pasteText = "";
-            showAddDialog = false;
-        } catch (err) {
-            showToast({ type: "error", message: "添加失败: " + err.message });
-        } finally {
-            adding = false;
-        }
+        showToast({ type: "info", message: `已添加 ${links.length} 个资源到暂存区` });
+        pasteText = "";
+        showAddDialog = false;
     }
 </script>
 
@@ -101,6 +115,9 @@
         </div>
         <div class="header-right">
             <SearchBar on:search={handleSearch} />
+            <button class="btn-filter" class:active={showFilters} on:click={() => (showFilters = !showFilters)}>
+                <Filter size={14} /> 筛选
+            </button>
             <button class="btn-add" on:click={() => (showAddDialog = true)}>
                 <Plus size={16} />
                 添加资源
@@ -122,6 +139,48 @@
         </div>
     </div>
 
+    <!-- 筛选栏 -->
+    <div class="filter-bar" class:visible={showFilters}>
+        <div class="filter-row">
+            <div class="filter-group">
+                <label>状态</label>
+                <select bind:value={filterStatus} on:change={applyFilters}>
+                    <option value="">全部</option>
+                    <option value="draft">待完善</option>
+                    <option value="active">已入库</option>
+                    <option value="downloaded">已下载</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label>分类</label>
+                <select bind:value={filterCategory} on:change={applyFilters}>
+                    <option value="">全部</option>
+                    <option value="movie">电影</option>
+                    <option value="tv">电视剧</option>
+                    <option value="anime">动画</option>
+                    <option value="music">音乐</option>
+                    <option value="game">游戏</option>
+                    <option value="software">软件</option>
+                    <option value="book">书籍</option>
+                    <option value="other">其他</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label>排序</label>
+                <select bind:value={sortField} on:change={applyFilters}>
+                    <option value="created_at">创建时间</option>
+                    <option value="updated_at">更新时间</option>
+                    <option value="title">标题</option>
+                    <option value="rating">评分</option>
+                </select>
+            </div>
+            <button class="btn-icon" on:click={() => { sortOrder = sortOrder === 'asc' ? 'desc' : 'asc'; applyFilters(); }} title={sortOrder === 'asc' ? '升序' : '降序'}>
+                <ArrowUpDown size={16} />
+            </button>
+            <button class="btn-text" on:click={clearFilters}>清除筛选</button>
+        </div>
+    </div>
+
     {#if loading}
         <div class="loading">加载中...</div>
     {:else if $resources.items.length === 0}
@@ -137,6 +196,19 @@
                 <ResourceCard resource={item} mode={$viewMode} />
             {/each}
         </div>
+
+        <!-- 分页 -->
+        {#if totalPages > 1}
+            <div class="pagination">
+                <button disabled={currentPage <= 1} on:click={() => loadResources(currentPage - 1)}>
+                    <ChevronLeft size={16} />
+                </button>
+                <span class="page-info">{currentPage} / {totalPages} (共 {$resources.total} 条)</span>
+                <button disabled={currentPage >= totalPages} on:click={() => loadResources(currentPage + 1)}>
+                    <ChevronRight size={16} />
+                </button>
+            </div>
+        {/if}
     {/if}
 </div>
 
@@ -154,7 +226,7 @@
             </div>
             <div class="dialog-body">
                 <p class="dialog-hint">
-                    粘贴一个或多个磁链（magnet:?），每行一个
+                    粘贴磁链（magnet:?）后进入暂存区，可在底部暂存区确认入库
                 </p>
                 <textarea
                     bind:value={pasteText}
@@ -170,13 +242,7 @@
                 >
                     取消
                 </button>
-                <button
-                    class="btn-submit"
-                    on:click={handleAddResources}
-                    disabled={adding || !pasteText.trim()}
-                >
-                    {adding ? "添加中..." : "添加"}
-                </button>
+                <button class="btn-submit" on:click={handleAddResources} disabled={!pasteText.trim()}>添加到暂存区</button>
             </div>
         </div>
     </div>
@@ -297,6 +363,117 @@
     .btn-add:hover {
         background: #5558e6;
     }
+
+    .btn-filter {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        background: #2a2a2a;
+        border: none;
+        color: #aaa;
+        border-radius: 8px;
+        padding: 8px 14px;
+        font-size: 13px;
+        cursor: pointer;
+    }
+
+    .btn-filter:hover, .btn-filter.active {
+        background: #3a3a3a;
+        color: #fff;
+    }
+
+    .filter-bar {
+        display: none;
+        background: #141414;
+        border: 1px solid #222;
+        border-radius: 10px;
+        padding: 14px 16px;
+        margin-bottom: 16px;
+    }
+
+    .filter-bar.visible {
+        display: block;
+    }
+
+    .filter-row {
+        display: flex;
+        align-items: flex-end;
+        gap: 14px;
+        flex-wrap: wrap;
+    }
+
+    .filter-group {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+    }
+
+    .filter-group label {
+        font-size: 11px;
+        color: #666;
+        text-transform: uppercase;
+    }
+
+    .filter-group select {
+        background: #1a1a1a;
+        border: 1px solid #333;
+        border-radius: 6px;
+        color: #e0e0e0;
+        padding: 6px 10px;
+        font-size: 13px;
+        outline: none;
+        cursor: pointer;
+    }
+
+    .filter-group select:focus {
+        border-color: #6366f1;
+    }
+
+    .btn-icon {
+        background: #1a1a1a;
+        border: 1px solid #333;
+        border-radius: 6px;
+        color: #aaa;
+        padding: 7px 10px;
+        cursor: pointer;
+        display: flex;
+    }
+
+    .btn-icon:hover { background: #2a2a2a; color: #fff; }
+
+    .btn-text {
+        background: none;
+        border: none;
+        color: #666;
+        font-size: 12px;
+        cursor: pointer;
+        padding: 6px;
+    }
+
+    .btn-text:hover { color: #ef4444; }
+
+    .pagination {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 16px;
+        padding: 20px 0;
+    }
+
+    .pagination button {
+        background: #2a2a2a;
+        border: none;
+        color: #aaa;
+        cursor: pointer;
+        padding: 8px;
+        border-radius: 8px;
+        display: flex;
+    }
+
+    .pagination button:hover:not(:disabled) { background: #3a3a3a; color: #fff; }
+    .pagination button:disabled { opacity: 0.3; cursor: default; }
+
+    .page-info { font-size: 13px; color: #888; }
 
     /* Dialog */
     .dialog-overlay {
