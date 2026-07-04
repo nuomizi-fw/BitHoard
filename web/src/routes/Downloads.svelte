@@ -196,15 +196,41 @@
                         </div>
                     </div>
                     <div class="dl-actions">
+                        {#if dl.torrent_hash}
+                            {#if dl._state === 'pausedDL' || dl._state === 'pausedUP'}
+                                <button
+                                    on:click={async () => {
+                                        await api.qbResume(dl.torrent_hash);
+                                        downloads.fetch();
+                                        showToast({ type: "info", message: "已恢复" });
+                                    }}
+                                    title="恢复"
+                                >
+                                    <Play size={14} />
+                                </button>
+                            {:else if dl._state && dl._state !== 'pausedDL' && dl._state !== 'pausedUP' && dl._state !== 'unknown'}
+                                <button
+                                    on:click={async () => {
+                                        await api.qbPause(dl.torrent_hash);
+                                        downloads.fetch();
+                                        showToast({ type: "info", message: "已暂停" });
+                                    }}
+                                    title="暂停"
+                                >
+                                    <Pause size={14} />
+                                </button>
+                            {/if}
+                        {/if}
                         <button
                             on:click={async () => {
+                                if (dl.torrent_hash) {
+                                    await api.qbDelete(dl.torrent_hash, false);
+                                }
                                 await api.deleteDownload(dl.id, true, false);
                                 downloads.fetch();
-                                showToast({
-                                    type: "info",
-                                    message: "已删除下载任务",
-                                });
+                                showToast({ type: "info", message: "已删除下载任务" });
                             }}
+                            title="删除"
                         >
                             <Trash2 size={14} />
                         </button>

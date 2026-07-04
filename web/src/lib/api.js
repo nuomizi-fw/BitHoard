@@ -113,6 +113,16 @@ export const api = {
   tmdbMatch: (resourceId) =>
     request(`/resources/${resourceId}/tmdb-match`, { method: 'POST' }).then(r => r.json()),
 
+  // TMDB
+  tmdbSearch: (q, type = 'multi') =>
+    request(`/tmdb/search?q=${encodeURIComponent(q)}&type=${type}`).then(r => r.json()),
+
+  tmdbMovie: (movieId) =>
+    request(`/tmdb/movie/${movieId}`).then(r => r.json()),
+
+  tmdbTV: (tvId) =>
+    request(`/tmdb/tv/${tvId}`).then(r => r.json()),
+
   // Downloads
   getDownloads: () =>
     request('/downloads').then(r => r.json()),
@@ -136,6 +146,9 @@ export const api = {
   deleteTag: (id) =>
     request(`/tags/${id}`, { method: 'DELETE' }).then(r => r.json()),
 
+  updateTag: (id, data) =>
+    request(`/tags/${id}`, { method: 'PATCH', body: data }).then(r => r.json()),
+
   addTagToResource: (resourceId, tagId) =>
     request(`/tags/resources/${resourceId}/tags`, { method: 'POST', body: { tag_id: tagId } }).then(r => r.json()),
 
@@ -149,11 +162,33 @@ export const api = {
   createGroup: (name, description) =>
     request('/groups', { method: 'POST', body: { name, description } }).then(r => r.json()),
 
+  updateGroup: (id, data) =>
+    request(`/groups/${id}`, { method: 'PATCH', body: data }).then(r => r.json()),
+
+  deleteGroup: (id) =>
+    request(`/groups/${id}`, { method: 'DELETE' }).then(r => r.json()),
+
+  getGroup: (id) =>
+    request(`/groups/${id}`).then(r => r.json()),
+
   addToGroup: (groupId, resourceId) =>
     request(`/groups/${groupId}/resources/${resourceId}`, { method: 'POST' }).then(r => r.json()),
 
   removeFromGroup: (groupId, resourceId) =>
     request(`/groups/${groupId}/resources/${resourceId}`, { method: 'DELETE' }).then(r => r.json()),
+
+  // Export/Import
+  exportData: (includeScreenshots = true) =>
+    `${API_BASE}/export?include_screenshots=${includeScreenshots}`,
+
+  importData: async (file, mode = 'merge') => {
+    const res = await fetch(`${API_BASE}/import?mode=${mode}`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${getToken()}` },
+      body: file,
+    });
+    return res.json();
+  },
 
   // Search
   search: (q, type = 'all') =>

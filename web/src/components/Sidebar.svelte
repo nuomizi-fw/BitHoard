@@ -18,6 +18,8 @@
         { path: "/", label: "全部资源", icon: Home },
         { path: "/search", label: "搜索", icon: Search },
         { path: "/downloads", label: "下载管理", icon: Download },
+        { path: "/groups", label: "分组管理", icon: FolderOpen },
+        { path: "/tags", label: "标签管理", icon: Tag },
     ];
 
     let searchQuery = "";

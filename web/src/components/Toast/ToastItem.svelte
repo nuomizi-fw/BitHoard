@@ -2,7 +2,7 @@
     import { createEventDispatcher } from "svelte";
     import { api } from "../../lib/api.js";
     import { showToast } from "../../lib/stores/ui.js";
-    import { resources } from "../../lib/stores/resources.js";
+    import { resources, stagingResources } from "../../lib/stores/resources.js";
     import {
         X,
         Download,
@@ -12,6 +12,7 @@
         CheckCircle,
         AlertCircle,
         Info,
+        Inbox,
     } from "lucide-svelte";
 
     export let toast;
@@ -112,6 +113,24 @@
             dispatch("dismiss");
         } catch (err) {
             showToast({ type: "error", message: "操作失败: " + err.message });
+        } finally {
+            saving = false;
+        }
+    }
+
+    async function handleStaging() {
+        saving = true;
+        try {
+            // 直接添加到暂存区，不创建资源
+            stagingResources.update(items => [
+                ...items,
+                ...(toast.links || []).map(link => ({
+                    magnetUri: link.uri,
+                    title: title || "",
+                    source: sourceApp,
+                }))
+            ]);
+            dispatch("dismiss");
         } finally {
             saving = false;
         }
@@ -234,6 +253,14 @@
                 on:click={() => dispatch("dismiss")}
             >
                 忽略
+            </button>
+            <button
+                class="btn btn-staging"
+                disabled={saving}
+                on:click={handleStaging}
+            >
+                <Inbox size={14} />
+                暂存
             </button>
             <button
                 class="btn btn-primary"
@@ -464,5 +491,14 @@
 
     .btn-secondary:hover:not(:disabled) {
         background: #3a3a3a;
+    }
+
+    .btn-staging {
+        background: #7c3aed;
+        color: white;
+    }
+
+    .btn-staging:hover:not(:disabled) {
+        background: #6d28d9;
     }
 </style>

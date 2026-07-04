@@ -4,7 +4,7 @@ const { spawn } = require('child_process');
 const { createWindow } = require('./window');
 const { createTray } = require('./tray');
 const { registerShortcuts, unregisterAll } = require('./shortcuts');
-const { initClipboardMonitor } = require('./clipboard-monitor');
+const { initClipboardMonitor, stopClipboardMonitor } = require('./clipboard-monitor');
 
 let mainWindow = null;
 let tray = null;
@@ -100,7 +100,7 @@ app.whenReady().then(async () => {
     mainWindow = null;
   });
 
-  tray = createTray(mainWindow);
+  tray = createTray(mainWindow, { initClipboardMonitor: (win) => initClipboardMonitor(win), stopClipboardMonitor });
   initClipboardMonitor(mainWindow);
   registerShortcuts(mainWindow);
 });

@@ -21,20 +21,35 @@
     // 筛选状态
     let filterStatus = "";
     let filterCategory = "";
+    let filterGroup = "";
+    let filterTag = "";
     let sortField = "created_at";
     let sortOrder = "desc";
+
+    // 分组和标签数据（用于筛选下拉）
+    let groups = [];
+    let tags = [];
 
     const PAGE_SIZE = 30;
     let currentPage = 1;
 
     onMount(() => {
         loadResources();
+        loadFilterOptions();
     });
+
+    async function loadFilterOptions() {
+        try {
+            [groups, tags] = await Promise.all([api.getGroups(), api.getTags()]);
+        } catch { /* 非关键 */ }
+    }
 
     function buildParams(page = 1) {
         const p = { is_deleted: 0, limit: PAGE_SIZE, page, sort: sortField, order: sortOrder };
         if (filterStatus) p.status = filterStatus;
         if (filterCategory) p.category = filterCategory;
+        if (filterGroup) p.group = filterGroup;
+        if (filterTag) p.tag = filterTag;
         return p;
     }
 
@@ -66,6 +81,8 @@
     function clearFilters() {
         filterStatus = "";
         filterCategory = "";
+        filterGroup = "";
+        filterTag = "";
         sortField = "created_at";
         sortOrder = "desc";
         loadResources(1);
@@ -163,6 +180,24 @@
                     <option value="software">软件</option>
                     <option value="book">书籍</option>
                     <option value="other">其他</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label>分组</label>
+                <select bind:value={filterGroup} on:change={applyFilters}>
+                    <option value="">全部</option>
+                    {#each groups as g}
+                        <option value={g.id}>{g.name} ({g.resource_count})</option>
+                    {/each}
+                </select>
+            </div>
+            <div class="filter-group">
+                <label>标签</label>
+                <select bind:value={filterTag} on:change={applyFilters}>
+                    <option value="">全部</option>
+                    {#each tags as t}
+                        <option value={t.id}>{t.name} ({t.resource_count})</option>
+                    {/each}
                 </select>
             </div>
             <div class="filter-group">

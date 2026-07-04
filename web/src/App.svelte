@@ -7,6 +7,8 @@
     import Downloads from "./routes/Downloads.svelte";
     import Settings from "./routes/Settings.svelte";
     import Search from "./routes/Search.svelte";
+    import Groups from "./routes/Groups.svelte";
+    import Tags from "./routes/Tags.svelte";
     import Login from "./routes/Login.svelte";
     import { isAuthenticated } from "./lib/stores/auth.js";
     import { qbProgress } from "./lib/stores/downloads.js";
@@ -59,6 +61,8 @@
             <Route path="/downloads" component={Downloads} />
             <Route path="/settings" component={Settings} />
             <Route path="/search" component={Search} />
+            <Route path="/groups" component={Groups} />
+            <Route path="/tags" component={Tags} />
         </Layout>
     {/if}
 </Router>

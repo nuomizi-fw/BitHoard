@@ -42,6 +42,32 @@ router.post('/', async (req, res) => {
 });
 
 /**
+ * 更新标签
+ * PATCH /api/tags/:id
+ */
+router.patch('/:id', async (req, res) => {
+  const { id } = req.params;
+  const { name, color } = req.body;
+
+  const db = getDb();
+  const tag = db.prepare('SELECT * FROM tag WHERE id = ?').get(id);
+  if (!tag) return res.status(404).json({ error: 'Tag not found' });
+
+  const setClauses = [];
+  const updates = { id };
+  if (name !== undefined) { setClauses.push('name = @name'); updates.name = name; }
+  if (color !== undefined) { setClauses.push('color = @color'); updates.color = color; }
+
+  if (setClauses.length > 0) {
+    await writeQueue.enqueue(() => {
+      db.prepare(`UPDATE tag SET ${setClauses.join(', ')} WHERE id = @id`).run(updates);
+    });
+  }
+
+  res.json(db.prepare('SELECT * FROM tag WHERE id = ?').get(id));
+});
+
+/**
  * 删除标签
  * DELETE /api/tags/:id
  */

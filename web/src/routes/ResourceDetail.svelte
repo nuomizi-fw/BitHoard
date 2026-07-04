@@ -12,6 +12,9 @@
         Plus,
         X,
         RefreshCw,
+        Film,
+        Search as SearchIcon,
+        Image,
     } from "lucide-svelte";
     import { showToast } from "../lib/stores/ui.js";
 
@@ -31,6 +34,14 @@
     let newTagName = "";
     let newTagColor = "#6366f1";
     let showTagInput = false;
+
+    // TMDB 元数据
+    let tmdbResult = null;
+    let tmdbSearching = false;
+    let tmdbApplying = false;
+    let tmdbQuery = "";
+    let tmdbSearchResults = [];
+    let tmdbSearchResultsLoading = false;
 
     onMount(async () => {
         try {
@@ -151,6 +162,68 @@
         } catch (err) {
             showToast({ type: "error", message: "刷新失败" });
         }
+    }
+
+    // TMDB 操作
+    async function matchTMDB() {
+        tmdbSearching = true;
+        tmdbResult = null;
+        try {
+            tmdbResult = await api.tmdbMatch(id);
+        } catch (err) {
+            showToast({ type: "error", message: "TMDB匹配失败: " + err.message });
+        }
+        tmdbSearching = false;
+    }
+
+    let tmdbSearchTimer;
+    function onTmdbSearchInput() {
+        clearTimeout(tmdbSearchTimer);
+        if (!tmdbQuery.trim()) { tmdbSearchResults = []; return; }
+        tmdbSearchTimer = setTimeout(searchTMDB, 400);
+    }
+
+    async function searchTMDB() {
+        if (!tmdbQuery.trim()) return;
+        tmdbSearchResultsLoading = true;
+        try {
+            const res = await api.tmdbSearch(tmdbQuery);
+            tmdbSearchResults = res.results || [];
+        } catch { tmdbSearchResults = []; }
+        tmdbSearchResultsLoading = false;
+    }
+
+    function selectTmdbResult(item) {
+        tmdbResult = {
+            title: item.title || item.name,
+            originalTitle: item.original_title || item.original_name,
+            year: (item.release_date || item.first_air_date || '').substring(0, 4),
+            overview: item.overview,
+            posterUrl: item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : null,
+            backdropUrl: item.backdrop_path ? `https://image.tmdb.org/t/p/w500${item.backdrop_path}` : null,
+            rating: item.vote_average,
+            genres: [],
+            mediaType: item.media_type,
+        };
+        tmdbQuery = "";
+        tmdbSearchResults = [];
+    }
+
+    async function applyTMDB() {
+        if (!tmdbResult) return;
+        tmdbApplying = true;
+        try {
+            const update = {};
+            if (tmdbResult.title) update.title = tmdbResult.title;
+            if (tmdbResult.overview) update.description = tmdbResult.overview;
+            if (tmdbResult.rating) update.rating = Math.round(tmdbResult.rating / 2); // TMDB 10分制 -> 5分制
+            await api.updateResource(id, update);
+            resource = await api.getResource(id);
+            showToast({ type: "info", message: "TMDB元数据已应用" });
+        } catch (err) {
+            showToast({ type: "error", message: "应用失败: " + err.message });
+        }
+        tmdbApplying = false;
     }
 
     // 当前资源已关联的 tag ids
@@ -393,6 +466,85 @@
             </div>
 
             <div class="detail-sidebar">
+                <!-- TMDB 元数据 -->
+                <section class="sidebar-section">
+                    <div class="section-header">
+                        <h3><Film size={14} /> TMDB 元数据</h3>
+                    </div>
+
+                    {#if tmdbResult}
+                        <div class="tmdb-result">
+                            {#if tmdbResult.posterUrl}
+                                <img src={tmdbResult.posterUrl} alt={tmdbResult.title} class="tmdb-poster" />
+                            {/if}
+                            <div class="tmdb-info">
+                                <h4>{tmdbResult.title}</h4>
+                                {#if tmdbResult.originalTitle && tmdbResult.originalTitle !== tmdbResult.title}
+                                    <p class="tmdb-original">{tmdbResult.originalTitle}</p>
+                                {/if}
+                                <div class="tmdb-meta">
+                                    {#if tmdbResult.year}<span>{tmdbResult.year}</span>{/if}
+                                    {#if tmdbResult.mediaType}<span class="tmdb-type">{tmdbResult.mediaType === 'movie' ? '电影' : '电视剧'}</span>{/if}
+                                    {#if tmdbResult.rating}<span>⭐ {tmdbResult.rating}/10</span>{/if}
+                                </div>
+                                {#if tmdbResult.overview}
+                                    <p class="tmdb-overview">{tmdbResult.overview}</p>
+                                {/if}
+                                {#if tmdbResult.genres && tmdbResult.genres.length > 0}
+                                    <div class="tmdb-genres">
+                                        {#each tmdbResult.genres as g}
+                                            <span class="tmdb-genre">{g}</span>
+                                        {/each}
+                                    </div>
+                                {/if}
+                                <button class="btn btn-primary btn-sm" on:click={applyTMDB} disabled={tmdbApplying}>
+                                    {tmdbApplying ? "应用中..." : "应用元数据到资源"}
+                                </button>
+                            </div>
+                        </div>
+                    {:else if tmdbSearching}
+                        <p class="tmdb-hint">正在匹配...</p>
+                    {:else}
+                        <p class="tmdb-hint">搜索 TMDB 获取影视海报、简介和评分</p>
+                    {/if}
+
+                    <!-- 自动匹配 -->
+                    <button class="btn btn-secondary btn-sm tmdb-btn" on:click={matchTMDB} disabled={tmdbSearching}>
+                        <SearchIcon size={12} /> 自动匹配
+                    </button>
+
+                    <!-- 手动搜索 -->
+                    <div class="tmdb-manual">
+                        <input
+                            type="text"
+                            bind:value={tmdbQuery}
+                            on:input={onTmdbSearchInput}
+                            placeholder="手动搜索标题..."
+                            class="tmdb-search-input"
+                        />
+                        {#if tmdbSearchResultsLoading}
+                            <span class="tmdb-hint">搜索中...</span>
+                        {:else if tmdbSearchResults.length > 0}
+                            <div class="tmdb-search-results">
+                                {#each tmdbSearchResults.slice(0, 5) as item}
+                                    <button class="tmdb-search-item" on:click={() => selectTmdbResult(item)}>
+                                        {#if item.poster_path}
+                                            <img src={`https://image.tmdb.org/t/p/w92${item.poster_path}`} alt="" class="tmdb-thumb" />
+                                        {:else}
+                                            <span class="tmdb-no-thumb"><Image size={20} /></span>
+                                        {/if}
+                                        <div class="tmdb-item-info">
+                                            <span class="tmdb-item-title">{item.title || item.name}</span>
+                                            <span class="tmdb-item-year">{(item.release_date || item.first_air_date || '').substring(0, 4)}</span>
+                                            <span class="tmdb-item-type">{item.media_type === 'movie' ? '🎬' : '📺'}</span>
+                                        </div>
+                                    </button>
+                                {/each}
+                            </div>
+                        {/if}
+                    </div>
+                </section>
+
                 <!-- 下载状态 -->
                 {#if resource.download}
                     <section class="sidebar-section">
@@ -808,4 +960,56 @@
     .btn-primary:hover { background: #5558e6; }
     .btn-secondary { background: #2a2a2a; color: #aaa; }
     .btn-secondary:hover { background: #3a3a3a; color: #fff; }
+
+    /* TMDB */
+    .tmdb-result {
+        display: flex; gap: 12px; margin-bottom: 12px;
+    }
+    .tmdb-poster {
+        width: 80px; height: 120px; border-radius: 6px; object-fit: cover; flex-shrink: 0;
+        background: #1a1a1a;
+    }
+    .tmdb-info { flex: 1; min-width: 0; }
+    .tmdb-info h4 { font-size: 14px; color: #e0e0e0; margin-bottom: 2px; }
+    .tmdb-original { font-size: 11px; color: #555; margin-bottom: 4px; }
+    .tmdb-meta { display: flex; gap: 8px; font-size: 11px; color: #666; margin-bottom: 6px; flex-wrap: wrap; }
+    .tmdb-type { background: #2a2a2a; padding: 0 6px; border-radius: 3px; font-size: 10px; }
+    .tmdb-overview {
+        font-size: 12px; color: #888; line-height: 1.5;
+        display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; overflow: hidden;
+        margin-bottom: 8px;
+    }
+    .tmdb-genres { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 8px; }
+    .tmdb-genre {
+        font-size: 10px; color: #6366f1; background: #6366f122;
+        padding: 1px 8px; border-radius: 10px;
+    }
+    .tmdb-hint { font-size: 12px; color: #555; padding: 4px 0; }
+    .tmdb-btn { margin-top: 8px; font-size: 12px; padding: 6px 12px; }
+    .btn-sm { padding: 6px 14px !important; font-size: 12px !important; }
+    .tmdb-manual { margin-top: 10px; }
+    .tmdb-search-input {
+        width: 100%; background: #1a1a1a; border: 1px solid #333; color: #e0e0e0;
+        padding: 6px 10px; border-radius: 6px; font-size: 12px; outline: none;
+    }
+    .tmdb-search-input:focus { border-color: #6366f1; }
+    .tmdb-search-results {
+        margin-top: 6px; display: flex; flex-direction: column; gap: 2px;
+        max-height: 240px; overflow-y: auto;
+    }
+    .tmdb-search-item {
+        display: flex; gap: 8px; align-items: center;
+        background: #1a1a1a; border: none; color: #aaa; padding: 6px 8px;
+        border-radius: 6px; cursor: pointer; text-align: left; width: 100%;
+    }
+    .tmdb-search-item:hover { background: #2a2a2a; color: #fff; }
+    .tmdb-thumb { width: 32px; height: 48px; border-radius: 3px; object-fit: cover; }
+    .tmdb-no-thumb {
+        width: 32px; height: 48px; border-radius: 3px; background: #222;
+        display: flex; align-items: center; justify-content: center; color: #444;
+    }
+    .tmdb-item-info { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+    .tmdb-item-title { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .tmdb-item-year { font-size: 10px; color: #666; }
+    .tmdb-item-type { font-size: 10px; }
 </style>

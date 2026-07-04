@@ -2,9 +2,10 @@
     import { onMount } from "svelte";
     import { api } from "../lib/api.js";
     import { clearToken } from "../lib/api.js";
+    import { getToken } from "../lib/api.js";
     import { isAuthenticated } from "../lib/stores/auth.js";
     import { showToast } from "../lib/stores/ui.js";
-    import { Server, Key, Globe, Database, Save, CheckCircle, XCircle } from "lucide-svelte";
+    import { Server, Key, Globe, Database, Save, HardDrive, Upload, Download } from "lucide-svelte";
 
     let qbHost = "http://localhost:8080";
     let qbUsername = "admin";
@@ -15,6 +16,12 @@
 
     let ipWhitelist = "";
     let savingIp = false;
+
+    // 备份恢复
+    let exporting = false;
+    let importing = false;
+    let importMode = "merge";
+    let importFile = null;
 
     onMount(async () => {
         try {
@@ -78,6 +85,55 @@
     function handleLogout() {
         clearToken();
         isAuthenticated.set(false);
+    }
+
+    function handleExport() {
+        // 使用 window.open 触发下载
+        const token = getToken();
+        // 创建隐藏的下载链接触发下载
+        const link = document.createElement('a');
+        link.href = api.exportData(true);
+        // 添加认证头通过 URL 不行，需要用 fetch + blob
+        fetch(api.exportData(true), {
+            headers: { 'Authorization': `Bearer ${token}` }
+        })
+        .then(res => res.blob())
+        .then(blob => {
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `bithoard-export-${Date.now()}.bithoard`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            showToast({ type: "success", message: "数据已导出" });
+        })
+        .catch(err => showToast({ type: "error", message: "导出失败: " + err.message }));
+    }
+
+    function handleFileSelect(e) {
+        importFile = e.target.files[0] || null;
+    }
+
+    async function handleImport() {
+        if (!importFile) return;
+        importing = true;
+        try {
+            const result = await api.importData(importFile, importMode);
+            if (result.success) {
+                showToast({ type: "success", message: `导入成功 (模式: ${importMode === 'replace' ? '替换' : '合并'})` });
+                importFile = null;
+                // 重置 file input
+                const fileInput = document.getElementById('import-file-input');
+                if (fileInput) fileInput.value = '';
+            } else {
+                showToast({ type: "error", message: "导入失败: " + (result.error || '未知错误') });
+            }
+        } catch (err) {
+            showToast({ type: "error", message: "导入失败: " + err.message });
+        }
+        importing = false;
     }
 </script>
 
@@ -157,6 +213,38 @@
                 <button class="btn btn-danger" on:click={handleLogout}
                     >退出登录</button
                 >
+            </div>
+        </div>
+
+        <!-- 备份恢复 -->
+        <div class="setting-card">
+            <div class="card-icon"><HardDrive size={24} /></div>
+            <h3>备份与恢复</h3>
+            <p class="card-desc">导出/导入所有数据（包含截图）</p>
+
+            <div class="form-actions backup-actions">
+                <button class="btn btn-primary" on:click={handleExport}>
+                    <Download size={14} /> 导出数据
+                </button>
+            </div>
+
+            <div class="divider"></div>
+
+            <div class="form-group">
+                <label>导入模式</label>
+                <select bind:value={importMode} class="import-select">
+                    <option value="merge">合并 (保留现有 + 新增)</option>
+                    <option value="replace">替换 (清空后导入)</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>选择 .bithoard 备份文件</label>
+                <input id="import-file-input" type="file" accept=".bithoard" on:change={handleFileSelect} class="file-input" />
+            </div>
+            <div class="form-actions">
+                <button class="btn btn-secondary" on:click={handleImport} disabled={importing || !importFile}>
+                    <Upload size={14} /> {importing ? "导入中..." : "开始导入"}
+                </button>
             </div>
         </div>
 
@@ -286,4 +374,25 @@
         color: #888;
         line-height: 1.6;
     }
+
+    .backup-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .divider {
+        height: 1px; background: #2a2a2a; margin: 16px 0;
+    }
+    .import-select {
+        width: 100%; background: #1a1a1a; border: 1px solid #333; color: #e0e0e0;
+        padding: 8px 12px; border-radius: 6px; font-size: 13px; outline: none;
+    }
+    .file-input {
+        width: 100%; font-size: 12px; color: #888;
+    }
+    .file-input::file-selector-button {
+        background: #2a2a2a; border: none; color: #aaa;
+        padding: 6px 14px; border-radius: 4px; margin-right: 8px; cursor: pointer;
+    }
+    .btn-danger {
+        background: #3a1a1a; color: #ef4444; padding: 8px 16px;
+        border: none; border-radius: 8px; font-size: 13px; cursor: pointer;
+    }
+    .btn-danger:hover { background: #4a1a1a; }
 </style>
