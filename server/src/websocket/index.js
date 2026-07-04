@@ -143,13 +143,18 @@ class WebSocketService {
   }
 
   /**
-   * 停止轮询
+   * 停止轮询并关闭所有客户端连接
    */
   stop() {
     if (this.pollInterval) {
       clearInterval(this.pollInterval);
       this.pollInterval = null;
     }
+    // 强制关闭所有 WebSocket 客户端连接，释放 HTTP 服务器
+    for (const ws of this.clients) {
+      try { ws.terminate(); } catch { /* ignore */ }
+    }
+    this.clients.clear();
   }
 
   /**

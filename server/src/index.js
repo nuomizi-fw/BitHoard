@@ -103,11 +103,17 @@ export async function startServer(options = {}) {
  * 关闭服务器（释放端口、数据库、WebSocket）
  */
 export async function stopServer() {
+  // 1. 先停止 WS 轮询并强制关闭所有客户端连接
   wsService.stop();
+
+  // 2. 关闭 HTTP 服务器（强制断开所有连接，避免等待 keep-alive/WS 导致挂起）
   if (httpServer) {
+    httpServer.closeAllConnections?.();  // Node 18.2+, 强制断开所有活跃连接
     await new Promise((resolve) => httpServer.close(resolve));
     httpServer = null;
   }
+
+  // 3. 关闭数据库
   closeDb();
 }
 

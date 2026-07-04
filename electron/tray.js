@@ -79,4 +79,14 @@ function getMonitoringState() {
   return isMonitoring;
 }
 
-module.exports = { createTray, updateTrayStatus, getMonitoringState };
+/**
+ * 销毁系统托盘，释放资源防止残留进程
+ */
+function destroyTray() {
+  if (tray) {
+    tray.destroy();
+    tray = null;
+  }
+}
+
+module.exports = { createTray, updateTrayStatus, getMonitoringState, destroyTray };
