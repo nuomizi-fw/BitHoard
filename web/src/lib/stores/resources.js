@@ -59,11 +59,3 @@ export const resources = createResourcesStore();
 export const stagingResources = writable([]);
 
 export const selectedResource = writable(null);
-
-export const resources = createResourcesStore();
-
-// 暂存区 (draft 状态的资源)
-export const stagingResources = writable([]);
-
-// 当前选中的资源
-export const selectedResource = writable(null);

@@ -34,7 +34,9 @@
 
         // 订阅 WebSocket qB 状态变化
         wsClient.on("qb:status", (msg) => {
-            qbConnected = msg?.connected ?? msg?.server_state?.connection_status === "connected";
+            qbConnected =
+                msg?.connected ??
+                msg?.server_state?.connection_status === "connected";
             if (msg?.server_state) {
                 transferInfo = {
                     dlSpeed: msg.server_state.dl_info_speed || 0,
@@ -140,7 +142,9 @@
         <div class="header-right">
             {#if transferInfo}
                 <span class="transfer-info">
-                    ↓ {formatSpeed(transferInfo.dlSpeed)} ↑ {formatSpeed(transferInfo.upSpeed)}
+                    ↓ {formatSpeed(transferInfo.dlSpeed)} ↑ {formatSpeed(
+                        transferInfo.upSpeed,
+                    )}
                 </span>
             {/if}
             <button class="btn-refresh" on:click={() => downloads.fetch()}>
@@ -159,12 +163,20 @@
     {:else}
         <div class="download-list">
             {#each enrichedDownloads as dl}
-                <div class="download-item" class:completed={dl._state === 'pausedUP' || dl._state === 'uploading'}>
+                <div
+                    class="download-item"
+                    class:completed={dl._state === "pausedUP" ||
+                        dl._state === "uploading"}
+                >
                     <div class="dl-main">
                         <h4>{dl.title || "未知资源"}</h4>
                         <div class="dl-meta">
-                            <span class="dl-status {dl._state || dl.download_status}"
-                                >{stateLabel(dl._state || dl.download_status)}</span
+                            <span
+                                class="dl-status {dl._state ||
+                                    dl.download_status}"
+                                >{stateLabel(
+                                    dl._state || dl.download_status,
+                                )}</span
                             >
                             <span>{formatSize(dl.total_size)}</span>
                             {#if dl._num_seeds > 0}
@@ -177,43 +189,60 @@
                         <div class="progress-bar">
                             <div
                                 class="progress-fill"
-                                class:completed={dl._state === 'pausedUP' || dl._state === 'uploading'}
+                                class:completed={dl._state === "pausedUP" ||
+                                    dl._state === "uploading"}
                                 style="width: {dl._progress != null
                                     ? dl._progress.toFixed(1)
-                                    : (dl.downloaded_size && dl.total_size
-                                        ? ((dl.downloaded_size / dl.total_size) * 100).toFixed(1)
-                                        : 0)}%"
+                                    : dl.downloaded_size && dl.total_size
+                                      ? (
+                                            (dl.downloaded_size /
+                                                dl.total_size) *
+                                            100
+                                        ).toFixed(1)
+                                      : 0}%"
                             />
                         </div>
                         <div class="progress-detail">
                             <span class="progress-text">
-                                {dl._dlspeed ? `↓ ${formatSpeed(dl._dlspeed)}` : ""}
-                                {dl._upspeed ? ` ↑ ${formatSpeed(dl._upspeed)}` : ""}
+                                {dl._dlspeed
+                                    ? `↓ ${formatSpeed(dl._dlspeed)}`
+                                    : ""}
+                                {dl._upspeed
+                                    ? ` ↑ ${formatSpeed(dl._upspeed)}`
+                                    : ""}
                             </span>
                             {#if dl._eta > 0}
-                                <span class="progress-eta">剩余 {formatETA(dl._eta)}</span>
+                                <span class="progress-eta"
+                                    >剩余 {formatETA(dl._eta)}</span
+                                >
                             {/if}
                         </div>
                     </div>
                     <div class="dl-actions">
                         {#if dl.torrent_hash}
-                            {#if dl._state === 'pausedDL' || dl._state === 'pausedUP'}
+                            {#if dl._state === "pausedDL" || dl._state === "pausedUP"}
                                 <button
                                     on:click={async () => {
                                         await api.qbResume(dl.torrent_hash);
                                         downloads.fetch();
-                                        showToast({ type: "info", message: "已恢复" });
+                                        showToast({
+                                            type: "info",
+                                            message: "已恢复",
+                                        });
                                     }}
                                     title="恢复"
                                 >
                                     <Play size={14} />
                                 </button>
-                            {:else if dl._state && dl._state !== 'pausedDL' && dl._state !== 'pausedUP' && dl._state !== 'unknown'}
+                            {:else if dl._state && dl._state !== "pausedDL" && dl._state !== "pausedUP" && dl._state !== "unknown"}
                                 <button
                                     on:click={async () => {
                                         await api.qbPause(dl.torrent_hash);
                                         downloads.fetch();
-                                        showToast({ type: "info", message: "已暂停" });
+                                        showToast({
+                                            type: "info",
+                                            message: "已暂停",
+                                        });
                                     }}
                                     title="暂停"
                                 >
@@ -228,7 +257,10 @@
                                 }
                                 await api.deleteDownload(dl.id, true, false);
                                 downloads.fetch();
-                                showToast({ type: "info", message: "已删除下载任务" });
+                                showToast({
+                                    type: "info",
+                                    message: "已删除下载任务",
+                                });
                             }}
                             title="删除"
                         >
@@ -454,43 +486,5 @@
 
     .empty p {
         font-size: 14px;
-    }
-</style>
-
-    .progress-text {
-        font-size: 11px;
-        color: #666;
-        font-family: monospace;
-        white-space: nowrap;
-    }
-
-    .dl-actions {
-        display: flex;
-        gap: 4px;
-    }
-
-    .dl-actions button {
-        background: none;
-        border: none;
-        color: #888;
-        cursor: pointer;
-        padding: 6px;
-        border-radius: 4px;
-    }
-
-    .dl-actions button:hover {
-        background: #2a2a2a;
-        color: #fff;
-    }
-
-    .empty {
-        text-align: center;
-        padding: 60px;
-        color: #666;
-    }
-
-    .empty-icon {
-        margin-bottom: 16px;
-        opacity: 0.3;
     }
 </style>
