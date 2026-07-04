@@ -47,6 +47,8 @@
         "extraMetadata": {
             "main": "electron/main.js"
         },
+        "npmRebuild": false,
+        "nodeGypRebuild": false,
         "win": {
             "target": [
                 {

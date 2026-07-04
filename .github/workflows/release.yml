@@ -29,9 +29,10 @@ jobs:
       - run: pnpm build:web
 
       - name: Build Electron (NSIS + portable)
-        run: pnpm build:electron
+        run: npx electron-builder
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DEBUG: electron-builder
 
       - name: Create/Update Release
         uses: softprops/action-gh-release@v2
