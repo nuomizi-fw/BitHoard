@@ -3,7 +3,7 @@ import cors from 'cors';
 import morgan from 'morgan';
 import expressWs from 'express-ws';
 import config from './config.js';
-import { getDb } from './database/connection.js';
+import { getDb, closeDb } from './database/connection.js';
 import { authMiddleware } from './middleware/auth.js';
 import { ipWhitelistMiddleware } from './middleware/ip-whitelist.js';
 import wsService from './websocket/index.js';
@@ -31,6 +31,11 @@ app.use(express.raw({ type: 'image/*', limit: '20mb' }));
 
 // ── IP 白名单 ──
 app.use(ipWhitelistMiddleware);
+
+// ── 健康检查（鉴权之前，无需 token）──
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', uptime: process.uptime() });
+});
 
 // ── 鉴权 ──
 app.use('/api', authMiddleware);
@@ -67,27 +72,62 @@ if (fs.existsSync(webDistPath)) {
 // ── WebSocket ──
 wsService.init(app);
 
-// ── 健康检查 ──
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', uptime: process.uptime() });
-});
+/** @type {import('http').Server|null} */
+let httpServer = null;
 
-// ── 启动服务器 ──
-getDb(); // 初始化数据库
+/**
+ * 启动服务器（供 Electron 主进程或独立运行调用）
+ * @param {object} [options]
+ * @param {number} [options.port] - 监听端口，默认使用 config.port
+ * @param {string} [options.host] - 监听地址，默认使用 config.host
+ * @returns {Promise<{ app: import('express').Express, server: import('http').Server }>}
+ */
+export async function startServer(options = {}) {
+  const port = options.port ?? config.port;
+  const host = options.host ?? config.host;
 
-const { port, host } = config;
-app.listen(port, host, () => {
-  console.log(`[BitHoard] Server running at http://${host}:${port}`);
-  console.log(`[BitHoard] WebSocket at ws://${host}:${port}/ws`);
-});
+  // 初始化数据库
+  getDb();
 
-// 优雅退出
-process.on('SIGINT', () => {
+  return new Promise((resolve, reject) => {
+    httpServer = app.listen(port, host, () => {
+      console.log(`[BitHoard] Server running at http://${host}:${port}`);
+      console.log(`[BitHoard] WebSocket at ws://${host}:${port}/ws`);
+      resolve({ app, server: httpServer });
+    });
+    httpServer.on('error', reject);
+  });
+}
+
+/**
+ * 关闭服务器（释放端口、数据库、WebSocket）
+ */
+export async function stopServer() {
   wsService.stop();
-  process.exit(0);
-});
+  if (httpServer) {
+    await new Promise((resolve) => httpServer.close(resolve));
+    httpServer = null;
+  }
+  closeDb();
+}
 
-process.on('SIGTERM', () => {
-  wsService.stop();
-  process.exit(0);
-});
+// ── 独立运行时自动启动 ──
+// 当通过 `node src/index.js` 直接运行时，自动调用 startServer
+// 被 Electron import 时不会执行（通过检查是否为 ESM 主入口）
+const isMainModule = process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
+if (isMainModule) {
+  startServer().catch((err) => {
+    console.error('[BitHoard] Failed to start:', err);
+    process.exit(1);
+  });
+
+  // 优雅退出
+  process.on('SIGINT', async () => {
+    await stopServer();
+    process.exit(0);
+  });
+  process.on('SIGTERM', async () => {
+    await stopServer();
+    process.exit(0);
+  });
+}

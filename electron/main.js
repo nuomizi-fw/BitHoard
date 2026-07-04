@@ -1,6 +1,5 @@
-const { app, ipcMain, clipboard } = require('electron');
+const { app, ipcMain, clipboard, dialog } = require('electron');
 const path = require('path');
-const { spawn } = require('child_process');
 const { createWindow } = require('./window');
 const { createTray } = require('./tray');
 const { registerShortcuts, unregisterAll } = require('./shortcuts');
@@ -8,32 +7,22 @@ const { initClipboardMonitor, stopClipboardMonitor } = require('./clipboard-moni
 
 let mainWindow = null;
 let tray = null;
-let serverProcess = null;
+let serverInstance = null;  // { app, server } 来自 server 模块
 const isDev = !app.isPackaged;
 
-function startServer() {
-  return new Promise((resolve, reject) => {
-    const serverPath = path.join(__dirname, '..', 'server', 'src', 'index.js');
-    serverProcess = spawn('node', [serverPath], {
-      env: { ...process.env, SERVER_PORT: process.env.SERVER_PORT || '13002' },
-      stdio: ['pipe', 'pipe', 'pipe'],
-    });
+/**
+ * 启动后端服务器（直接嵌入 Electron 主进程，无需 spawn 子进程）
+ */
+async function startServer() {
+  // 生产模式下，数据库存放在用户数据目录（app.getPath('userData')）
+  if (!isDev) {
+    const dbDir = path.join(app.getPath('userData'), 'data', 'db');
+    process.env.DB_PATH = path.join(dbDir, 'bithoard.db');
+  }
 
-    serverProcess.stdout.on('data', (data) => {
-      const msg = data.toString();
-      console.log('[server]', msg);
-      if (msg.includes('Server running')) {
-        resolve();
-      }
-    });
-
-    serverProcess.stderr.on('data', (data) => {
-      console.error('[server:err]', data.toString());
-    });
-
-    serverProcess.on('error', reject);
-    setTimeout(resolve, 5000);
-  });
+  // 动态 ESM import：server 模块是 ESM，Electron 主进程是 CJS
+  const serverModule = await import('../server/src/index.js');
+  return serverModule.startServer();
 }
 
 // IPC 处理器
@@ -81,12 +70,24 @@ ipcMain.handle('file:dropped', async (event, filePaths) => {
 });
 
 app.whenReady().then(async () => {
+  // ── 生产模式：嵌入启动后端服务器 ──
+  // 开发模式下由 pnpm dev:server 单独启动，避免端口冲突
   if (!isDev) {
-    await startServer();
+    console.log('[main] Starting backend server...');
+    try {
+      serverInstance = await startServer();
+      console.log('[main] Server ready');
+    } catch (err) {
+      console.error('[main] Server start failed:', err.message);
+      dialog.showErrorBox('启动失败', `后端服务启动失败，请尝试重新运行。\n\n${err.message}`);
+      app.quit();
+      return;
+    }
   } else {
-    console.log('[dev] Use pnpm -C server dev for backend');
+    console.log('[dev] Using pnpm dev:server for backend');
   }
 
+  // ── 创建窗口 ──
   mainWindow = createWindow(isDev);
 
   mainWindow.on('close', (e) => {
@@ -109,11 +110,17 @@ app.on('window-all-closed', () => {
   // 不退出，因为还有托盘
 });
 
-app.on('before-quit', () => {
+app.on('before-quit', async () => {
   app.isQuitting = true;
   unregisterAll();
-  if (serverProcess) {
-    serverProcess.kill();
+  if (serverInstance) {
+    try {
+      const serverModule = await import('../server/src/index.js');
+      await serverModule.stopServer();
+    } catch (err) {
+      console.error('[main] Server stop error:', err.message);
+    }
+    serverInstance = null;
   }
 });
 
@@ -123,6 +130,7 @@ app.on('activate', () => {
     mainWindow.on('close', (e) => {
       if (tray) { e.preventDefault(); mainWindow.hide(); }
     });
+    mainWindow.on('closed', () => { mainWindow = null; });
   } else {
     mainWindow.show();
   }
