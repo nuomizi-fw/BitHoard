@@ -1,27 +1,30 @@
 const { app, ipcMain, clipboard, dialog } = require('electron');
 const path = require('path');
 const { createWindow } = require('./window');
-const { createTray } = require('./tray');
+const { createTray, destroyTray } = require('./tray');
 const { registerShortcuts, unregisterAll } = require('./shortcuts');
 const { initClipboardMonitor, stopClipboardMonitor } = require('./clipboard-monitor');
 
 let mainWindow = null;
 let tray = null;
 let serverInstance = null;  // { app, server } 来自 server 模块
+let stopServerFn = null;    // stopServer 函数引用，退出时调用
 const isDev = !app.isPackaged;
 
 /**
  * 启动后端服务器（直接嵌入 Electron 主进程，无需 spawn 子进程）
  */
 async function startServer() {
-  // 生产模式下，数据库存放在用户数据目录（app.getPath('userData')）
+  // 生产模式下，数据统一存放在 exe 所在目录的 data/ 下（便携化规范）
   if (!isDev) {
-    const dbDir = path.join(app.getPath('userData'), 'data', 'db');
+    const exeDir = path.dirname(app.getPath('exe'));
+    const dbDir = path.join(exeDir, 'data', 'db');
     process.env.DB_PATH = path.join(dbDir, 'bithoard.db');
   }
 
   // 动态 ESM import：server 模块是 ESM，Electron 主进程是 CJS
   const serverModule = await import('../server/src/index.js');
+  stopServerFn = serverModule.stopServer;
   return serverModule.startServer();
 }
 
@@ -112,14 +115,24 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', async () => {
   app.isQuitting = true;
+
+  // 销毁系统托盘（不销毁会阻止进程退出）
+  destroyTray();
+
+  // 停止剪贴板监控（清除 setInterval，防止 PowerShell 子进程残留）
+  stopClipboardMonitor();
+
+  // 注销全局快捷键
   unregisterAll();
-  if (serverInstance) {
+
+  // 停止后端服务器（关闭 HTTP/WS、数据库连接、轮询定时器）
+  if (stopServerFn) {
     try {
-      const serverModule = await import('../server/src/index.js');
-      await serverModule.stopServer();
+      await stopServerFn();
     } catch (err) {
       console.error('[main] Server stop error:', err.message);
     }
+    stopServerFn = null;
     serverInstance = null;
   }
 });
