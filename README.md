@@ -25,20 +25,49 @@
 - 🌐 **Web 远程访问** — JWT 鉴权 + IP 白名单
 - 🔔 **系统托盘** — 后台常驻，自定义 Toast 浮窗内嵌编辑
 
+## 环境要求
+
+- **Node.js** `>= 20`（推荐通过 [fnm](https://github.com/Schniz/fnm) 管理版本）
+- **pnpm** `>= 9`（通过 corepack 启用：`corepack enable`）
+- **qBittorrent** `v4.5+`（可选，用于下载功能，需开启 Web UI）
+
 ## 快速开始
 
-```bash
-# 安装所有依赖
+```powershell
+# 1. 切换到项目目录
+cd C:\Users\YuSuiXian\source\repos\BitHoard
+
+# 2. 激活 Node.js 环境（使用 fnm）
+fnm env --use-on-cd --shell power-shell | Out-String | Invoke-Expression
+fnm use
+
+# 3. 安装所有依赖
 pnpm install
 
-# 开发模式 (三个进程并行: server + web + electron)
+# 4. 开发模式（三进程并行：server + web + electron）
+pnpm dev
+```
+
+### 分步启动
+
+```powershell
+# 终端 1 — 后端服务器 (http://localhost:13002)
+cd server
+node src/index.js
+
+# 终端 2 — 前端开发服务器 (http://localhost:5173)
+cd web
 pnpm dev
 
-# 或者分别启动
-pnpm dev:server   # 后端 http://localhost:13002
-pnpm dev:web      # 前端 http://localhost:5173
-pnpm dev:electron # Electron 桌面端
+# 终端 3 — Electron 桌面壳（可选，需要后端+前端先运行）
+pnpm dev:electron
 ```
+
+> **注意**：如果通过代理上网，启动前需设置环境变量：
+> ```powershell
+> $env:http_proxy = "http://127.0.0.1:7890"
+> $env:https_proxy = "http://127.0.0.1:7890"
+> ```
 
 ## 配置
 
