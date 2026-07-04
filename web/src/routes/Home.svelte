@@ -54,18 +54,35 @@
             });
 
             let createdCount = 0;
+            let skippedCount = 0;
             for (const r of result.results) {
                 if (r.created) {
                     createdCount++;
                     await api.updateResource(r.id, { status: "active" });
+                } else if (r.skipped) {
+                    skippedCount++;
                 }
             }
 
             resources.refresh();
-            showToast({
-                type: "success",
-                message: `成功添加 ${createdCount} 个资源`,
-            });
+
+            if (createdCount > 0 && skippedCount > 0) {
+                showToast({
+                    type: "success",
+                    message: `成功添加 ${createdCount} 个资源，${skippedCount} 个已存在已跳过`,
+                });
+            } else if (createdCount > 0) {
+                showToast({
+                    type: "success",
+                    message: `成功添加 ${createdCount} 个资源`,
+                });
+            } else {
+                showToast({
+                    type: "info",
+                    message: `这 ${skippedCount} 个资源已存在，无需重复添加`,
+                });
+            }
+
             pasteText = "";
             showAddDialog = false;
         } catch (err) {

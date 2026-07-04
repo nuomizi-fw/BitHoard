@@ -3,7 +3,16 @@
     import { api } from "../../lib/api.js";
     import { showToast } from "../../lib/stores/ui.js";
     import { resources } from "../../lib/stores/resources.js";
-    import { X, Download, Save, ChevronDown, Image } from "lucide-svelte";
+    import {
+        X,
+        Download,
+        Save,
+        ChevronDown,
+        Image,
+        CheckCircle,
+        AlertCircle,
+        Info,
+    } from "lucide-svelte";
 
     export let toast;
 
@@ -14,6 +23,19 @@
     let sourceApp = toast.sourceApp || "unknown";
     let expanded = false;
     let saving = false;
+
+    // 判断是否为磁链检测类 toast
+    $: isLinkToast = !!toast.links;
+
+    // 简单 toast 的图标
+    $: typeIcon =
+        toast.type === "success"
+            ? "✅"
+            : toast.type === "error"
+              ? "❌"
+              : toast.type === "info"
+                ? "ℹ️"
+                : "🔗";
 
     // 从链接提取默认标题
     $: if (toast.links && toast.links[0]) {
@@ -112,115 +134,141 @@
     }
 </script>
 
-<div class="toast" class:expanded>
-    <div class="toast-header">
-        <div class="toast-type-icon">🔗</div>
-        <div class="toast-title">
-            {toast.links?.length > 1
-                ? `检测到 ${toast.links.length} 个链接`
-                : "检测到磁链"}
-        </div>
-        <div class="toast-actions">
-            <button
-                class="btn-icon"
-                title="展开编辑"
-                on:click={() => (expanded = !expanded)}
-            >
-                <span class:rotated={expanded}><ChevronDown size={16} /></span>
-            </button>
-            <button
-                class="btn-icon"
-                title="关闭"
-                on:click={() => dispatch("dismiss")}
-            >
-                <X size={16} />
-            </button>
-        </div>
-    </div>
-
-    <div class="toast-body">
-        <div class="link-preview">
-            {#each toast.links || [] as link}
-                <div class="link-item">
-                    {link.uri.substring(0, 80)}{link.uri.length > 80
-                        ? "..."
-                        : ""}
-                </div>
-            {/each}
-        </div>
-
-        {#if expanded}
-            <div class="edit-area">
-                <div class="field">
-                    <label>来源</label>
-                    <select bind:value={sourceApp}>
-                        <option value="unknown">未知</option>
-                        <option value="微信">微信</option>
-                        <option value="QQ">QQ</option>
-                        <option value="Chrome">Chrome</option>
-                        <option value="Edge">Edge</option>
-                        <option value="Firefox">Firefox</option>
-                        <option value="Telegram">Telegram</option>
-                        <option value="文件资源管理器">文件资源管理器</option>
-                    </select>
-                </div>
-
-                <div class="field">
-                    <label>标题</label>
-                    <input
-                        type="text"
-                        bind:value={title}
-                        placeholder="输入标题..."
-                    />
-                </div>
-
-                <div class="field">
-                    <label>描述</label>
-                    <textarea
-                        bind:value={description}
-                        placeholder="输入描述..."
-                        rows="2"
-                    />
-                </div>
-
-                <div class="field">
-                    <label>截图</label>
-                    <div
-                        class="screenshot-drop"
-                        contenteditable="true"
-                        on:paste={handlePasteImage}
-                        tabindex="0"
+{#if isLinkToast}
+    <!-- 磁链检测 toast：完整编辑 UI -->
+    <div class="toast" class:expanded>
+        <div class="toast-header">
+            <div class="toast-type-icon">🔗</div>
+            <div class="toast-title">
+                {toast.links.length > 1
+                    ? `检测到 ${toast.links.length} 个链接`
+                    : "检测到磁链"}
+            </div>
+            <div class="toast-actions">
+                <button
+                    class="btn-icon"
+                    title="展开编辑"
+                    on:click={() => (expanded = !expanded)}
+                >
+                    <span class:rotated={expanded}
+                        ><ChevronDown size={16} /></span
                     >
-                        <Image size={16} />
-                        <span>点击此处后 Ctrl+V 粘贴截图</span>
+                </button>
+                <button
+                    class="btn-icon"
+                    title="关闭"
+                    on:click={() => dispatch("dismiss")}
+                >
+                    <X size={16} />
+                </button>
+            </div>
+        </div>
+
+        <div class="toast-body">
+            <div class="link-preview">
+                {#each toast.links || [] as link}
+                    <div class="link-item">
+                        {link.uri.substring(0, 80)}{link.uri.length > 80
+                            ? "..."
+                            : ""}
+                    </div>
+                {/each}
+            </div>
+
+            {#if expanded}
+                <div class="edit-area">
+                    <div class="field">
+                        <label>来源</label>
+                        <select bind:value={sourceApp}>
+                            <option value="unknown">未知</option>
+                            <option value="微信">微信</option>
+                            <option value="QQ">QQ</option>
+                            <option value="Chrome">Chrome</option>
+                            <option value="Edge">Edge</option>
+                            <option value="Firefox">Firefox</option>
+                            <option value="Telegram">Telegram</option>
+                            <option value="文件资源管理器">文件资源管理器</option>
+                        </select>
+                    </div>
+
+                    <div class="field">
+                        <label>标题</label>
+                        <input
+                            type="text"
+                            bind:value={title}
+                            placeholder="输入标题..."
+                        />
+                    </div>
+
+                    <div class="field">
+                        <label>描述</label>
+                        <textarea
+                            bind:value={description}
+                            placeholder="输入描述..."
+                            rows="2"
+                        />
+                    </div>
+
+                    <div class="field">
+                        <label>截图</label>
+                        <div
+                            class="screenshot-drop"
+                            contenteditable="true"
+                            on:paste={handlePasteImage}
+                            tabindex="0"
+                        >
+                            <Image size={16} />
+                            <span>点击此处后 Ctrl+V 粘贴截图</span>
+                        </div>
                     </div>
                 </div>
-            </div>
-        {/if}
-    </div>
+            {/if}
+        </div>
 
-    <div class="toast-footer">
-        <button
-            class="btn btn-secondary"
-            disabled={saving}
-            on:click={() => dispatch("dismiss")}
-        >
-            忽略
-        </button>
-        <button class="btn btn-primary" disabled={saving} on:click={handleSave}>
-            <Save size={14} />
-            保存
-        </button>
-        <button
-            class="btn btn-accent"
-            disabled={saving}
-            on:click={handleDownload}
-        >
-            <Download size={14} />
-            立即下载
-        </button>
+        <div class="toast-footer">
+            <button
+                class="btn btn-secondary"
+                disabled={saving}
+                on:click={() => dispatch("dismiss")}
+            >
+                忽略
+            </button>
+            <button
+                class="btn btn-primary"
+                disabled={saving}
+                on:click={handleSave}
+            >
+                <Save size={14} />
+                保存
+            </button>
+            <button
+                class="btn btn-accent"
+                disabled={saving}
+                on:click={handleDownload}
+            >
+                <Download size={14} />
+                立即下载
+            </button>
+        </div>
     </div>
-</div>
+{:else}
+    <!-- 简单通知 toast -->
+    <div class="toast simple-toast">
+        <div class="toast-header">
+            <div class="toast-type-icon">{typeIcon}</div>
+            <div class="toast-title">{toast.message || ""}</div>
+            <div class="toast-actions">
+                <button
+                    class="btn-icon"
+                    title="关闭"
+                    on:click={() => dispatch("dismiss")}
+                >
+                    <X size={16} />
+                </button>
+            </div>
+        </div>
+    </div>
+{/if}
 
 <style>
     .toast {
@@ -250,6 +298,10 @@
         padding: 12px 16px;
         background: #252525;
         border-bottom: 1px solid #333;
+    }
+
+    .simple-toast .toast-header {
+        border-bottom: none;
     }
 
     .toast-type-icon {

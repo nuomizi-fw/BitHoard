@@ -12,7 +12,7 @@
     } from "lucide-svelte";
     import { showToast } from "../lib/stores/ui.js";
 
-    export let params;
+    export let id;
     let resource = null;
     let loading = true;
     let editing = false;
@@ -23,7 +23,7 @@
 
     onMount(async () => {
         try {
-            resource = await api.getResource(params.id);
+            resource = await api.getResource(id);
             editTitle = resource.title || "";
             editDescription = resource.description || "";
             editRating = resource.rating || 0;
@@ -37,13 +37,13 @@
 
     async function saveEdit() {
         try {
-            const updated = await api.updateResource(params.id, {
+            await api.updateResource(id, {
                 title: editTitle,
                 description: editDescription,
                 rating: editRating,
                 review: editReview,
             });
-            resource = await api.getResource(params.id);
+            resource = await api.getResource(id);
             editing = false;
             showToast({ type: "info", message: "已保存" });
         } catch (err) {
@@ -53,18 +53,18 @@
 
     async function handleDelete() {
         if (!confirm("确定要删除吗？")) return;
-        await api.deleteResource(params.id);
+        await api.deleteResource(id);
         navigate("/");
     }
 
     async function handleDownload() {
         try {
             await api.createDownload({
-                resource_id: params.id,
+                resource_id: id,
                 start_paused: false,
             });
             showToast({ type: "info", message: "已添加到下载队列" });
-            resource = await api.getResource(params.id);
+            resource = await api.getResource(id);
         } catch (err) {
             showToast({ type: "error", message: "下载失败: " + err.message });
         }
@@ -77,8 +77,8 @@
             if (item.type.startsWith("image/")) {
                 const blob = item.getAsFile();
                 const buffer = await blob.arrayBuffer();
-                await api.uploadScreenshot(params.id, new Uint8Array(buffer));
-                resource = await api.getResource(params.id);
+                await api.uploadScreenshot(id, new Uint8Array(buffer));
+                resource = await api.getResource(id);
                 showToast({ type: "info", message: "截图已上传" });
             }
         }
@@ -222,7 +222,7 @@
                             <div class="screenshot-item">
                                 <img
                                     src={api.getScreenshotUrl(
-                                        params.id,
+                                        id,
                                         shot.id,
                                     )}
                                     alt=""
