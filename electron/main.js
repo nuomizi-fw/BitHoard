@@ -42,6 +42,14 @@ ipcMain.handle('clipboard:read', () => {
   return clipboard.readText() || '';
 });
 
+// 读取剪贴板图像（返回 PNG data URL 或 null）
+ipcMain.handle('clipboard:read-image', () => {
+  const { nativeImage } = require('electron');
+  const img = clipboard.readImage();
+  if (img.isEmpty()) return null;
+  return img.toDataURL();
+});
+
 // 拖拽文件处理
 ipcMain.handle('file:dropped', async (event, filePaths) => {
   const fs = require('fs');

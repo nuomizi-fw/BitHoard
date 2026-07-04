@@ -27,8 +27,13 @@ async function request(endpoint, options = {}) {
     ...options.headers,
   };
 
+  const isBinary = options.body instanceof Blob ||
+                   options.body instanceof ArrayBuffer ||
+                   ArrayBuffer.isView(options.body);
+
   // 不在 GET/HEAD 请求里加 Content-Type
-  if (options.body && !(options.body instanceof FormData) && typeof options.body !== 'string') {
+  // 二进制数据（Blob/ArrayBuffer）直接透传，不 JSON 序列化
+  if (options.body && !isBinary && !(options.body instanceof FormData) && typeof options.body !== 'string') {
     headers['Content-Type'] = 'application/json';
     options.body = JSON.stringify(options.body);
   }
@@ -90,8 +95,11 @@ export const api = {
     request(`/resources/${id}/purge`, { method: 'DELETE' }).then(r => r.json()),
 
   // Screenshots
-  getScreenshotUrl: (resourceId, screenshotId, size = 'thumb') =>
-    `${API_BASE}/resources/${resourceId}/screenshots/${screenshotId}?size=${size}`,
+  getScreenshotUrl: (resourceId, screenshotId, size = 'thumb') => {
+    let url = `${API_BASE}/resources/${resourceId}/screenshots/${screenshotId}?size=${size}`;
+    if (authToken) url += `&token=${encodeURIComponent(authToken)}`;
+    return url;
+  },
 
   uploadScreenshot: (resourceId, imageBlob) =>
     request(`/resources/${resourceId}/screenshots`, {
@@ -104,8 +112,11 @@ export const api = {
     request(`/resources/${resourceId}/screenshots/${screenshotId}`, { method: 'DELETE' }).then(r => r.json()),
 
   // Torrent
-  getTorrentUrl: (resourceId) =>
-    `${API_BASE}/resources/${resourceId}/torrent`,
+  getTorrentUrl: (resourceId) => {
+    let url = `${API_BASE}/resources/${resourceId}/torrent`;
+    if (authToken) url += `?token=${encodeURIComponent(authToken)}`;
+    return url;
+  },
 
   cacheFiles: (resourceId) =>
     request(`/resources/${resourceId}/cache-files`, { method: 'POST' }).then(r => r.json()),

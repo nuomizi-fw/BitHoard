@@ -17,11 +17,19 @@ export function authMiddleware(req, res, next) {
   }
 
   const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+  let token;
+
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    token = authHeader.split(' ')[1];
+  } else if (req.query.token) {
+    // <img>/<a> 等标签不发送 Authorization 头，支持通过查询参数传递 token
+    token = req.query.token;
+  }
+
+  if (!token) {
     return res.status(401).json({ error: 'Missing authorization token' });
   }
 
-  const token = authHeader.split(' ')[1];
   try {
     const payload = jwt.verify(token, config.jwtSecret);
     req.user = payload;

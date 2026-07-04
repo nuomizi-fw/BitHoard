@@ -1,4 +1,4 @@
-const { clipboard } = require('electron');
+const { clipboard, nativeImage } = require('electron');
 const { execSync } = require('child_process');
 
 // 链接匹配正则
@@ -15,6 +15,7 @@ const PATTERNS = {
 };
 
 let lastClipboardText = '';
+let lastClipboardImageHash = '';
 let monitorInterval = null;
 let mainWindow = null;
 let batchBuffer = [];
@@ -165,6 +166,31 @@ function handleLinks(links, contextText) {
 }
 
 /**
+ * 检查剪贴板图像（用于磁链 toast 截图）
+ * 与文本检测共用同一个 500ms 轮询
+ */
+function checkClipboardImage() {
+  const img = clipboard.readImage();
+  if (img.isEmpty()) {
+    // 剪贴板无图像，清除跟踪
+    if (lastClipboardImageHash) lastClipboardImageHash = '';
+    return;
+  }
+
+  // 用 PNG buffer 前 256 字节做简易去重 hash
+  const png = img.toPNG();
+  const hashSample = png.slice(0, Math.min(256, png.length)).toString('base64');
+
+  if (hashSample === lastClipboardImageHash) return;
+  lastClipboardImageHash = hashSample;
+
+  const dataUrl = img.toDataURL();
+  if (mainWindow) {
+    mainWindow.webContents.send('toast:clipboard-image', { dataUrl });
+  }
+}
+
+/**
  * 检查剪贴板
  */
 function checkClipboard() {
@@ -209,8 +235,11 @@ function checkClipboard() {
 function initClipboardMonitor(win) {
   mainWindow = win;
 
-  // 轮询间隔 500ms
-  monitorInterval = setInterval(checkClipboard, 500);
+  // 轮询间隔 500ms（同时检查文本和图像）
+  monitorInterval = setInterval(() => {
+    checkClipboard();
+    checkClipboardImage();
+  }, 500);
 }
 
 /**

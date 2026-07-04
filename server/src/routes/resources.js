@@ -170,7 +170,10 @@ router.get('/:id/screenshots/:screenshotId', (req, res) => {
   }
 
   const data = size === 'original' ? screenshot.image : (screenshot.thumbnail || screenshot.image);
-  const contentType = screenshot.format === 'png' ? 'image/png' : 'image/jpeg';
+  // 缩略图固定为 JPEG（sharp 生成），原图按存储格式
+  const contentType = size === 'original'
+    ? (screenshot.format === 'png' ? 'image/png' : 'image/jpeg')
+    : 'image/jpeg';
 
   res.set('Content-Type', contentType);
   res.set('Cache-Control', 'max-age=3600');

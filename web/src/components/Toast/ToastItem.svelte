@@ -1,5 +1,5 @@
 <script>
-    import { createEventDispatcher } from "svelte";
+    import { createEventDispatcher, onMount, onDestroy } from "svelte";
     import { api } from "../../lib/api.js";
     import { showToast } from "../../lib/stores/ui.js";
     import { resources, stagingResources } from "../../lib/stores/resources.js";
@@ -24,6 +24,38 @@
     let sourceApp = toast.sourceApp || "unknown";
     let expanded = false;
     let saving = false;
+
+    // 截图缓存：粘贴的图片暂存在此，保存/下载时一并上传
+    // { dataUrl }  — dataUrl 用于预览；上传时从 dataUrl 还原 Blob
+    let screenshots = [];
+    let unsubImage = null;
+
+    function dataUrlToBlob(dataUrl) {
+        const parts = dataUrl.split(',');
+        const mime = parts[0].match(/:(.*?);/)?.[1] || 'image/png';
+        const binary = atob(parts[1]);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+        return new Blob([bytes], { type: mime });
+    }
+
+    function removeScreenshot(idx) {
+        screenshots = screenshots.filter((_, i) => i !== idx);
+    }
+
+    // 监听 Electron 后台轮询推送的剪贴板图像
+    onMount(() => {
+        if (window.electronAPI?.onClipboardImage) {
+            unsubImage = window.electronAPI.onClipboardImage(({ dataUrl }) => {
+                if (!isLinkToast) return;
+                screenshots = [...screenshots, { dataUrl }];
+            });
+        }
+    });
+
+    onDestroy(() => {
+        if (typeof unsubImage === 'function') unsubImage();
+    });
 
     // 判断是否为磁链检测类 toast
     $: isLinkToast = !!toast.links;
@@ -73,7 +105,7 @@
                 suggestedTitle: title || undefined,
             });
 
-            // 更新标题和描述
+            // 更新标题和描述，同时上传截图
             for (const r of result.results) {
                 if (r.created) {
                     await api.updateResource(r.id, {
@@ -81,6 +113,14 @@
                         description: description || undefined,
                         status: "active",
                     });
+                    // 上传所有粘贴的截图
+                    for (const shot of screenshots) {
+                        try {
+                            await api.uploadScreenshot(r.id, dataUrlToBlob(shot.dataUrl));
+                        } catch (e) {
+                            console.error("Screenshot upload error:", e);
+                        }
+                    }
                 }
             }
 
@@ -111,6 +151,14 @@
                         description: description || undefined,
                         status: "active",
                     });
+                    // 上传所有粘贴的截图
+                    for (const shot of screenshots) {
+                        try {
+                            await api.uploadScreenshot(r.id, dataUrlToBlob(shot.dataUrl));
+                        } catch (e) {
+                            console.error("Screenshot upload error:", e);
+                        }
+                    }
                     // 触发下载
                     try {
                         await api.createDownload({
@@ -147,6 +195,7 @@
                     source_app: sourceApp,
                     context_text: toast.contextText || "",
                     suggested_title: title || "",
+                    screenshots: screenshots.map(s => s.dataUrl),
                 }))
             ]);
             dispatch("dismiss");
@@ -155,21 +204,6 @@
         }
     }
 
-    function handlePasteImage(e) {
-        const items = e.clipboardData?.items;
-        if (!items) return;
-
-        for (const item of items) {
-            if (item.type.startsWith("image/")) {
-                const blob = item.getAsFile();
-                // 截图上传会在展开后或保存时处理
-                showToast({
-                    type: "info",
-                    message: "图片已捕获，保存时将一并上传",
-                });
-            }
-        }
-    }
 </script>
 
 {#if isLinkToast}
@@ -251,14 +285,26 @@
 
                     <div class="field">
                         <label>截图</label>
-                        <div
-                            class="screenshot-drop"
-                            contenteditable="true"
-                            on:paste={handlePasteImage}
-                            tabindex="0"
-                        >
-                            <Image size={16} />
-                            <span>点击此处后 Ctrl+V 粘贴截图</span>
+                        <div class="screenshot-area" class:has-shots={screenshots.length > 0}>
+                            {#if screenshots.length > 0}
+                                <div class="screenshot-thumbs">
+                                    {#each screenshots as shot, i}
+                                        <div class="shot-thumb">
+                                            <img src={shot.dataUrl} alt="截图 {i + 1}" />
+                                            <button
+                                                class="shot-remove"
+                                                on:click={() => removeScreenshot(i)}
+                                                title="移除"
+                                            >
+                                                <X size={10} />
+                                            </button>
+                                        </div>
+                                    {/each}
+                                </div>
+                            {/if}
+                            <p class="screenshot-hint">
+                                📋 复制图像后自动捕获为此资源的截图
+                            </p>
                         </div>
                     </div>
                 </div>
@@ -442,22 +488,66 @@
         border-color: #6366f1;
     }
 
-    .screenshot-drop {
-        border: 2px dashed #3a3a3a;
-        border-radius: 8px;
-        padding: 16px;
+    .screenshot-area {
         display: flex;
         flex-direction: column;
-        align-items: center;
         gap: 8px;
-        color: #666;
-        font-size: 12px;
-        cursor: text;
-        min-height: 60px;
     }
 
-    .screenshot-drop:focus {
-        border-color: #6366f1;
+    .screenshot-area.has-shots {
+        border: 1px solid #333;
+        border-radius: 8px;
+        padding: 8px;
+    }
+
+    .screenshot-thumbs {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+    }
+
+    .shot-thumb {
+        position: relative;
+        width: 72px;
+        height: 72px;
+        border-radius: 6px;
+        overflow: hidden;
+        border: 1px solid #3a3a3a;
+    }
+
+    .shot-thumb img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+
+    .shot-remove {
+        position: absolute;
+        top: 2px;
+        right: 2px;
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        background: rgba(0, 0, 0, 0.7);
+        border: none;
+        color: #fff;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        opacity: 0;
+        transition: opacity 0.15s;
+    }
+
+    .shot-thumb:hover .shot-remove {
+        opacity: 1;
+    }
+
+    .screenshot-hint {
+        color: #555;
+        font-size: 11px;
+        text-align: center;
+        margin: 4px 0 0;
     }
 
     .toast-footer {

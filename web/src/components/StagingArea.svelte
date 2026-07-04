@@ -11,6 +11,18 @@
 
     let confirming = false;
 
+    async function uploadStagingScreenshots(resourceId, stagingItem) {
+        if (!stagingItem.screenshots || stagingItem.screenshots.length === 0) return;
+        for (const dataUrl of stagingItem.screenshots) {
+            try {
+                const blob = await (await fetch(dataUrl)).blob();
+                await api.uploadScreenshot(resourceId, blob);
+            } catch (e) {
+                console.error("Screenshot upload error:", e);
+            }
+        }
+    }
+
     async function confirmItem(res, idx) {
         try {
             const result = await api.createResources({
@@ -19,9 +31,12 @@
                 contextText: res.context_text || "",
                 suggestedTitle: res.suggested_title || res.title || undefined,
             });
-            // 自动激活
+            // 自动激活 + 上传截图
             for (const r of result.results) {
-                if (r.created) await api.updateResource(r.id, { status: "active" });
+                if (r.created) {
+                    await api.updateResource(r.id, { status: "active" });
+                    await uploadStagingScreenshots(r.id, res);
+                }
             }
             // 从暂存区移除
             stagingResources.update(items => items.filter((_, i) => i !== idx));
@@ -51,7 +66,10 @@
                     suggestedTitle: res.suggested_title || res.title || undefined,
                 });
                 for (const r of result.results) {
-                    if (r.created) await api.updateResource(r.id, { status: "active" });
+                    if (r.created) {
+                        await api.updateResource(r.id, { status: "active" });
+                        await uploadStagingScreenshots(r.id, res);
+                    }
                 }
                 stagingResources.update(arr => arr.filter((_, j) => j !== i));
                 done++;

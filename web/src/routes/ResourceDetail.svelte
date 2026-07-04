@@ -1,5 +1,5 @@
 <script>
-    import { onMount } from "svelte";
+    import { onMount, onDestroy } from "svelte";
     import { link, navigate } from "svelte-routing";
     import { api } from "../lib/api.js";
     import {
@@ -53,6 +53,12 @@
         } finally {
             loading = false;
         }
+        // 全局监听粘贴事件，用于截图上传
+        document.addEventListener("paste", handlePasteScreenshot, true);
+    });
+
+    onDestroy(() => {
+        document.removeEventListener("paste", handlePasteScreenshot, true);
     });
 
     function syncEditFields() {
@@ -106,16 +112,33 @@
         }
     }
 
-    async function handlePasteScreenshot(e) {
+    // 全局粘贴截图捕获（资源详情页任意位置 Ctrl+V 即可粘贴截图）
+    function handlePasteScreenshot(e) {
+        // 不在输入框/文本域内拦截粘贴
+        const tag = e.target?.tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+
         const items = e.clipboardData?.items;
         if (!items) return;
+
         for (const item of items) {
-            if (item.type.startsWith("image/")) {
+            // Electron 中剪贴板图片的 type 可能是 "image/png" 或空字符串
+            if (item.kind === "file" && (item.type.startsWith("image/") || item.type === "")) {
                 const blob = item.getAsFile();
-                const buffer = await blob.arrayBuffer();
-                await api.uploadScreenshot(id, new Uint8Array(buffer));
-                resource = await api.getResource(id);
-                showToast({ type: "info", message: "截图已上传" });
+                if (!blob) continue;
+
+                e.preventDefault();
+                e.stopPropagation();
+
+                // 直接上传（已有 resource ID）
+                api.uploadScreenshot(id, blob).then(async () => {
+                    resource = await api.getResource(id);
+                    showToast({ type: "info", message: "截图已上传" });
+                }).catch(err => {
+                    console.error("Screenshot upload error:", err);
+                    showToast({ type: "error", message: "截图上传失败" });
+                });
+                break;
             }
         }
     }
@@ -368,13 +391,14 @@
                 <!-- 截图 -->
                 <section class="section">
                     <h3>截图 ({resource.screenshots?.length || 0})</h3>
-                    <div
-                        class="screenshot-upload"
-                        contenteditable="true"
-                        on:paste={handlePasteScreenshot}
-                        tabindex="0"
-                    >
-                        点击此处后 Ctrl+V 粘贴截图
+                    <div class="screenshot-upload" class:has-shots={(resource.screenshots?.length || 0) > 0}>
+                        {#if (resource.screenshots?.length || 0) === 0}
+                            <Image size={16} />
+                            <span>在此页面任意位置 Ctrl+V 粘贴截图</span>
+                        {:else}
+                            <Image size={16} />
+                            <span>在此页面任意位置 Ctrl+V 继续粘贴</span>
+                        {/if}
                     </div>
                     <div class="screenshots-grid">
                         {#each resource.screenshots || [] as shot}
