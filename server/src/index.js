@@ -16,6 +16,9 @@ import tagRoutes from './routes/tags.js';
 import groupRoutes from './routes/groups.js';
 import searchRoutes from './routes/search.js';
 import qbRoutes from './routes/qbittorrent.js';
+import tmdbRoutes from './routes/tmdb.js';
+import exportRoutes from './routes/export.js';
+import miscRoutes from './routes/misc.js';
 
 const app = express();
 expressWs(app);
@@ -40,6 +43,9 @@ app.use('/api/tags', tagRoutes);
 app.use('/api/groups', groupRoutes);
 app.use('/api/search', searchRoutes);
 app.use('/api/qbittorrent', qbRoutes);
+app.use('/api/tmdb', tmdbRoutes);
+app.use('/api/export', exportRoutes);
+app.use('/api', miscRoutes);
 
 // ── 前端静态文件 (生产模式) ──
 import fs from 'fs';

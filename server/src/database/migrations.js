@@ -131,6 +131,49 @@ const migrations = [
       CREATE INDEX idx_history_created_at ON history(created_at);
     `,
   },
+  {
+    version: 2,
+    description: 'Add constraints & fix defaults on resource table',
+    sql: `
+      -- 重建 resource 表以添加 CHECK/UNIQUE 约束
+      CREATE TABLE resource_new (
+        id TEXT PRIMARY KEY,
+        magnet_uri TEXT NOT NULL UNIQUE,
+        torrent_blob BLOB,
+        title TEXT DEFAULT '',
+        description TEXT DEFAULT '',
+        source_app TEXT DEFAULT '未知',
+        source_process TEXT DEFAULT '',
+        category TEXT DEFAULT '其他',
+        status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft', 'active')),
+        rating INTEGER DEFAULT 0 CHECK(rating >= 0 AND rating <= 5),
+        review TEXT DEFAULT '',
+        is_deleted INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+
+      INSERT INTO resource_new SELECT * FROM resource;
+
+      DROP TABLE resource;
+      ALTER TABLE resource_new RENAME TO resource;
+
+      -- 重建索引
+      CREATE INDEX idx_resource_status ON resource(status);
+      CREATE INDEX idx_resource_category ON resource(category);
+      CREATE INDEX idx_resource_rating ON resource(rating);
+      CREATE INDEX idx_resource_is_deleted ON resource(is_deleted);
+      CREATE INDEX idx_resource_created_at ON resource(created_at);
+      CREATE UNIQUE INDEX idx_resource_magnet_uri ON resource(magnet_uri);
+
+      -- 同步更新 v1 的默认值以保持外键引用兼容
+      UPDATE resource SET source_app = '未知' WHERE source_app = 'unknown';
+      UPDATE resource SET category = '其他' WHERE category = 'other';
+      UPDATE resource SET review = '' WHERE review IS NULL;
+      UPDATE resource SET title = '' WHERE title IS NULL;
+      UPDATE resource SET description = '' WHERE description IS NULL;
+    `,
+  },
 ];
 
 export function runMigrations(db) {

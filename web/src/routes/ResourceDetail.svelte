@@ -179,14 +179,18 @@
                         {#each Array(5) as _, i}
                             <button
                                 class="star-btn"
-                                fill={i <
-                                (editing ? editRating : resource.rating)
-                                    ? "currentColor"
-                                    : "none"}
+                                class:filled={i <
+                                    (editing ? editRating : resource.rating)}
                                 disabled={!editing}
                                 on:click={() => (editRating = i + 1)}
                             >
-                                <Star size={24} />
+                                <Star
+                                    size={24}
+                                    fill={i <
+                                    (editing ? editRating : resource.rating)
+                                        ? "currentColor"
+                                        : "none"}
+                                />
                             </button>
                         {/each}
                     </div>

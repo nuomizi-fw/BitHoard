@@ -12,7 +12,7 @@ export default {
   host: process.env.SERVER_HOST || '127.0.0.1',
 
   // 数据库 — 存放在项目根目录 data/db/ 下 (符合 data-location 规范)
-  dbPath: process.env.DB_PATH || path.join(__dirname, '..', '..', '..', 'data', 'db', 'bithoard.db'),
+  dbPath: process.env.DB_PATH || path.join(__dirname, '..', '..', 'data', 'db', 'bithoard.db'),
 
   // JWT 鉴权
   jwtSecret: process.env.JWT_SECRET || 'bithoard-change-me-in-production',

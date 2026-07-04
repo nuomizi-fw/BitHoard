@@ -16,6 +16,7 @@
 
     const navItems = [
         { path: "/", label: "全部资源", icon: Home },
+        { path: "/search", label: "搜索", icon: Search },
         { path: "/downloads", label: "下载管理", icon: Download },
     ];
 

@@ -5,6 +5,7 @@
     import ResourceDetail from "./routes/ResourceDetail.svelte";
     import Downloads from "./routes/Downloads.svelte";
     import Settings from "./routes/Settings.svelte";
+    import Search from "./routes/Search.svelte";
     import Login from "./routes/Login.svelte";
     import { isAuthenticated } from "./lib/stores/auth.js";
 
@@ -21,6 +22,7 @@
             <Route path="/resource/:id" component={ResourceDetail} />
             <Route path="/downloads" component={Downloads} />
             <Route path="/settings" component={Settings} />
+            <Route path="/search" component={Search} />
         </Layout>
     {/if}
 </Router>

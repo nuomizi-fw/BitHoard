@@ -1,74 +1,15 @@
-const { app, BrowserWindow, Tray, Menu, nativeImage, globalShortcut, dialog, ipcMain } = require('electron');
+const { app, ipcMain } = require('electron');
 const path = require('path');
 const { spawn } = require('child_process');
+const { createWindow } = require('./window');
+const { createTray } = require('./tray');
+const { registerShortcuts, unregisterAll } = require('./shortcuts');
 const { initClipboardMonitor } = require('./clipboard-monitor');
 
 let mainWindow = null;
 let tray = null;
 let serverProcess = null;
 const isDev = !app.isPackaged;
-
-function createWindow() {
-  mainWindow = new BrowserWindow({
-    width: 1400,
-    height: 900,
-    minWidth: 1000,
-    minHeight: 700,
-    frame: true,
-    title: 'BitHoard',
-    icon: path.join(__dirname, '../web/static/favicon.png'),
-    webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
-      contextIsolation: true,
-      nodeIntegration: false,
-      webSecurity: !isDev,
-    },
-  });
-
-  const url = isDev
-    ? 'http://localhost:5173'
-    : `http://localhost:${process.env.SERVER_PORT || 13002}`;
-
-  mainWindow.loadURL(url);
-
-  if (isDev) {
-    mainWindow.webContents.openDevTools({ mode: 'detach' });
-  }
-
-  mainWindow.on('close', (e) => {
-    // 最小化到托盘而不是退出
-    if (tray) {
-      e.preventDefault();
-      mainWindow.hide();
-    }
-  });
-
-  mainWindow.on('closed', () => {
-    mainWindow = null;
-  });
-}
-
-function createTray() {
-  const icon = nativeImage.createFromDataURL(
-    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAABHNCSVQICAgIfAhkiAAAAAlwSFlzAAAAbwAAAG8B8aLcQwAAABl0RVh0U29mdHdhcmUAd3d3Lmlua3NjYXBlLm9yZ5vuPBoAAAEYSURBVDiNpZMxTsNAEEX/rNeOAwUlHVdA4gJcAokLcAQkLkCBaOhScAQkOgoa7gAVHZyAgoKSK0QiJI5jr3cohuxarGM7VqSRRvP/z/xd7QpLKSil8E+hVNVaKaXWWgshhBBCPIQQb4fD4TWldE2I/X6/CyE8aa0LIcQTIAn4UEVErus+ENE9It57noeqqtLhcPiglEII0TbGfFNKCSGcAGitCSFYawFYay8AfVzXhaZpcr/fv/M8H7TWvhBiyMwMIYREkiTGzN8Acs7PGLOp67oNITzrus7XdX0JIcyZOQVAc84PAI6cc5WmaU0pnRFCBABordv9fv8uhHgRQnzmef5WVdXdMAy3AL4ANJzz4/F4/EopPTHzFjN3JMMwAJBSboQQP+/3B/lARL4AEfUeAAAAAElFTkSuQmCC'
-  );
-  tray = new Tray(icon.resize({ width: 16, height: 16 }));
-  
-  const contextMenu = Menu.buildFromTemplate([
-    { label: '打开 BitHoard', click: () => { mainWindow ? mainWindow.show() : createWindow(); } },
-    { type: 'separator' },
-    { label: '暂停剪贴板监控', type: 'checkbox', checked: true, click: (item) => { /* toggle */ } },
-    { type: 'separator' },
-    { label: '退出', click: () => { app.isQuitting = true; app.quit(); } },
-  ]);
-
-  tray.setToolTip('BitHoard');
-  tray.setContextMenu(contextMenu);
-
-  tray.on('double-click', () => {
-    mainWindow ? mainWindow.show() : createWindow();
-  });
-}
 
 function startServer() {
   return new Promise((resolve, reject) => {
@@ -91,8 +32,6 @@ function startServer() {
     });
 
     serverProcess.on('error', reject);
-
-    // 5秒超时
     setTimeout(resolve, 5000);
   });
 }
@@ -106,29 +45,59 @@ ipcMain.handle('clipboard:detected', async (event, data) => {
 
 ipcMain.handle('get-app-version', () => app.getVersion());
 
+// 拖拽文件处理
+ipcMain.handle('file:dropped', async (event, filePaths) => {
+  const fs = require('fs');
+  const path = require('path');
+  const results = [];
+
+  for (const filePath of filePaths) {
+    const ext = path.extname(filePath).toLowerCase();
+    if (ext === '.torrent') {
+      // 读取 .torrent 文件为 base64 发送给渲染进程
+      const data = fs.readFileSync(filePath);
+      results.push({ type: 'torrent', name: path.basename(filePath), data: data.toString('base64') });
+    } else {
+      // 尝试读取文本内容
+      try {
+        const text = fs.readFileSync(filePath, 'utf-8');
+        results.push({ type: 'text', name: path.basename(filePath), data: text });
+      } catch {
+        results.push({ type: 'unknown', name: path.basename(filePath) });
+      }
+    }
+  }
+
+  if (mainWindow && results.length > 0) {
+    mainWindow.webContents.send('file:dropped', results);
+  }
+
+  return results;
+});
+
 app.whenReady().then(async () => {
   if (!isDev) {
     await startServer();
   } else {
-    console.log('[dev] Use npm run dev:server for backend');
+    console.log('[dev] Use pnpm -C server dev for backend');
   }
 
-  createTray();
-  createWindow();
-  initClipboardMonitor(mainWindow);
+  mainWindow = createWindow(isDev);
 
-  // 全局快捷键: Ctrl+Shift+B 打开窗口
-  globalShortcut.register('CommandOrControl+Shift+B', () => {
-    if (mainWindow) {
-      mainWindow.isVisible() ? mainWindow.hide() : mainWindow.show();
+  mainWindow.on('close', (e) => {
+    if (tray) {
+      e.preventDefault();
+      mainWindow.hide();
     }
   });
 
-  // 拖拽文件处理
-  ipcMain.handle('file:dropped', async (event, filePaths) => {
-    // 将在 drag-drop.js 中处理
-    return filePaths;
+  mainWindow.on('closed', () => {
+    mainWindow = null;
   });
+
+  tray = createTray(mainWindow);
+  initClipboardMonitor(mainWindow);
+  registerShortcuts(mainWindow);
 });
 
 app.on('window-all-closed', () => {
@@ -137,13 +106,19 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   app.isQuitting = true;
-  globalShortcut.unregisterAll();
+  unregisterAll();
   if (serverProcess) {
     serverProcess.kill();
   }
 });
 
 app.on('activate', () => {
-  if (!mainWindow) createWindow();
-  else mainWindow.show();
+  if (!mainWindow) {
+    mainWindow = createWindow(isDev);
+    mainWindow.on('close', (e) => {
+      if (tray) { e.preventDefault(); mainWindow.hide(); }
+    });
+  } else {
+    mainWindow.show();
+  }
 });

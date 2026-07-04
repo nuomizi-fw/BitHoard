@@ -15,7 +15,7 @@ class TMDBService {
   }
 
   /**
-   * 按标题搜索影视信息
+   * 按标题搜索影视信息 (仅返回首个结果)
    */
   async search(title) {
     if (!this.enabled) return null;
@@ -27,6 +27,25 @@ class TMDBService {
       if (!res.ok) return null;
       const data = await res.json();
       return data.results?.[0] || null;
+    } catch (err) {
+      console.error('[tmdb] Search error:', err.message);
+      return null;
+    }
+  }
+
+  /**
+   * 搜索影视信息 (返回全部结果列表)
+   */
+  async searchMulti(title) {
+    if (!this.enabled) return null;
+
+    try {
+      const res = await fetch(
+        `${this.baseUrl}/search/multi?api_key=${this.apiKey}&language=${this.language}&query=${encodeURIComponent(title)}&page=1`
+      );
+      if (!res.ok) return null;
+      const data = await res.json();
+      return { results: data.results || [], total: data.total_results || 0 };
     } catch (err) {
       console.error('[tmdb] Search error:', err.message);
       return null;
