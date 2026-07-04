@@ -1,7 +1,7 @@
 <script>
     import { link } from "svelte-routing";
-    import { sidebarCollapsed, stagingExpanded } from "../lib/stores/ui.js";
-    import { resources } from "../lib/stores/resources.js";
+    import { sidebarCollapsed, stagingExpanded } from "../../lib/stores/ui.js";
+    import { resources } from "../../lib/stores/resources.js";
     import {
         Home,
         Download,

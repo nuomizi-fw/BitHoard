@@ -1,7 +1,7 @@
 <script>
     import { onMount } from "svelte";
     import { Router, Route } from "svelte-routing";
-    import Layout from "./components/Layout.svelte";
+    import Layout from "./components/layout/Layout.svelte";
     import Home from "./routes/Home.svelte";
     import ResourceDetail from "./routes/ResourceDetail.svelte";
     import Downloads from "./routes/Downloads.svelte";

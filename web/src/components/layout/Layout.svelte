@@ -2,15 +2,15 @@
     import { onMount } from "svelte";
     import { navigate } from "svelte-routing";
     import Sidebar from "./Sidebar.svelte";
-    import ToastContainer from "./Toast/ToastContainer.svelte";
-    import StagingArea from "./StagingArea.svelte";
+    import ToastContainer from "../toast/ToastContainer.svelte";
+    import StagingArea from "../StagingArea.svelte";
     import {
         stagingExpanded,
         sidebarCollapsed,
         showToast,
-    } from "../lib/stores/ui.js";
-    import { resources } from "../lib/stores/resources.js";
-    import { api } from "../lib/api.js";
+    } from "../../lib/stores/ui.js";
+    import { resources } from "../../lib/stores/resources.js";
+    import { api } from "../../lib/api.js";
 
     // 检测文本中的磁链
     function extractMagnetLinks(text) {
