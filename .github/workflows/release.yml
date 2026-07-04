@@ -35,7 +35,6 @@ jobs:
       - name: Build Electron (NSIS + portable)
         run: npx electron-builder
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           DEBUG: electron-builder
 
       - name: Zip portable exe
