@@ -88,10 +88,16 @@ export function buildOrderClause(sort = 'created_at', order = 'desc', alias = 'r
 }
 
 /**
- * 构建常用的 screenshot 子查询片段
+ * 构建常用的 screenshot / video 子查询片段
  * @param {string} [alias] - 表别名
  */
 export const SCREENSHOT_SUBQUERY = `
   (SELECT COUNT(*) FROM screenshot WHERE resource_id = r.id) as screenshot_count,
-  (SELECT id FROM screenshot WHERE resource_id = r.id ORDER BY "order" LIMIT 1) as first_screenshot_id
+  (SELECT id FROM screenshot WHERE resource_id = r.id ORDER BY "order" LIMIT 1) as first_screenshot_id,
+  (SELECT GROUP_CONCAT(id) FROM (SELECT id FROM screenshot WHERE resource_id = r.id ORDER BY "order" LIMIT 4)) as screenshot_ids
+`;
+
+export const VIDEO_SUBQUERY = `
+  (SELECT COUNT(*) FROM video WHERE resource_id = r.id) as video_count,
+  (SELECT id FROM video WHERE resource_id = r.id ORDER BY created_at LIMIT 1) as first_video_id
 `;

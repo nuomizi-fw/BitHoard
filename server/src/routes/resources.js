@@ -6,7 +6,7 @@ import sharp from 'sharp';
 import torrentParser from '../services/torrent-parser.js';
 import tmdbService from '../services/tmdb.js';
 import { extractCandidateTitle, extractDnName, extractContextSnippet } from '../services/title-extractor.js';
-import { buildResourceWhereClause, buildOrderClause, SCREENSHOT_SUBQUERY } from '../lib/query-builder.js';
+import { buildResourceWhereClause, buildOrderClause, SCREENSHOT_SUBQUERY, VIDEO_SUBQUERY } from '../lib/query-builder.js';
 
 import { cacheFilesFromTorrent } from '../services/file-cache.js';
 import { createLogger } from '../lib/logger.js';
@@ -49,7 +49,7 @@ router.get('/', (req, res) => {
   const { total } = db.prepare(countSql).get(params);
 
   const sql = `
-    SELECT r.*, ${SCREENSHOT_SUBQUERY}
+    SELECT r.*, ${SCREENSHOT_SUBQUERY}, ${VIDEO_SUBQUERY}
     FROM resource r
     ${whereClause}
     ORDER BY ${safeSort} ${safeOrder}
@@ -57,11 +57,36 @@ router.get('/', (req, res) => {
   `;
   const resources = db.prepare(sql).all({ ...params, limit: parseInt(limit), offset });
 
+  // 批量获取所有资源的标签（避免 N+1 查询）
+  const resourceIds = resources.map(r => r.id);
+  const tagsMap = {};
+  if (resourceIds.length > 0) {
+    const placeholders = resourceIds.map(() => '?').join(',');
+    const tagRows = db.prepare(`
+      SELECT rt.resource_id, t.id, t.name, t.color
+      FROM resource_tag rt
+      JOIN tag t ON t.id = rt.tag_id
+      WHERE rt.resource_id IN (${placeholders})
+      ORDER BY rt.resource_id, t.name
+    `).all(...resourceIds);
+    for (const row of tagRows) {
+      if (!tagsMap[row.resource_id]) tagsMap[row.resource_id] = [];
+      tagsMap[row.resource_id].push({ id: row.id, name: row.name, color: row.color });
+    }
+  }
+
+  // 处理 screenshot_ids 字符串为数组；附加 tags
+  const items = resources.map(r => ({
+    ...r,
+    screenshot_ids: r.screenshot_ids ? r.screenshot_ids.split(',') : [],
+    tags: tagsMap[r.id] || [],
+  }));
+
   res.json({
     total,
     page: parseInt(page),
     limit: parseInt(limit),
-    items: resources,
+    items,
   });
 });
 
