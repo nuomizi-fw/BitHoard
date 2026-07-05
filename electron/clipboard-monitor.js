@@ -665,4 +665,143 @@ function stopClipboardMonitor() {
   }
 }
 
-module.exports = { initClipboardMonitor, stopClipboardMonitor, videoLog };
+/**
+ * 按需检测剪贴板视频（用于详情页 Ctrl+V 兜底）。
+ * 与 checkClipboardVideo() 逻辑一致，但不发送 IPC，而是返回视频数据。
+ * @returns {Promise<{dataUrl:string,fileName:string,fileSize:number}|null>}
+ */
+async function checkClipboardVideoForPaste() {
+  const formats = clipboard.availableFormats();
+
+  // ── Strategy 0: text/uri-list（QQ、微信、文件资源管理器）──
+  if (formats.includes('text/uri-list')) {
+    try {
+      const raw = clipboard.read('text/uri-list');
+      let uriList = '';
+      if (Buffer.isBuffer(raw)) {
+        uriList = raw.toString('utf-8');
+      } else if (typeof raw === 'string') {
+        uriList = raw;
+      }
+      if (uriList && uriList.trim()) {
+        const uris = uriList.split(/[\r\n]+/).map(s => s.trim()).filter(Boolean);
+        for (const uri of uris) {
+          let filePath = '';
+          if (uri.startsWith('file://')) {
+            const url = new URL(uri);
+            filePath = decodeURIComponent(url.pathname);
+            if (process.platform === 'win32' && /^\/[a-zA-Z]:/.test(filePath)) {
+              filePath = filePath.slice(1);
+            }
+          } else if (/^[a-zA-Z]:[\\/]/.test(uri)) {
+            filePath = uri;
+          }
+          if (filePath && VIDEO_EXTENSIONS.test(filePath)) {
+            videoLog('checkClipboardVideoForPaste found via text/uri-list:', filePath);
+            return readVideoFileData(filePath);
+          }
+        }
+      }
+    } catch (e) {
+      videoLog('checkClipboardVideoForPaste text/uri-list error:', e.message);
+    }
+  }
+
+  // ── Strategy 1: PowerShell HDROP ──
+  try {
+    const psResult = await runPsClipboardCheckAsync();
+    if (psResult) return psResult;
+  } catch (e) {
+    videoLog('checkClipboardVideoForPaste PS error:', e.message);
+  }
+
+  return null;
+}
+
+/**
+ * Promise 版 PowerShell 剪贴板检测（从 runPsClipboardCheck 提取）
+ * @returns {Promise<{dataUrl:string,fileName:string,fileSize:number}|null>}
+ */
+function runPsClipboardCheckAsync() {
+  return new Promise((resolve) => {
+    const psScript = `
+$ErrorActionPreference = 'Stop'
+$r = @{}
+try {
+  Add-Type -AssemblyName System.Windows.Forms
+  $files = [System.Windows.Forms.Clipboard]::GetFileDropList()
+  if ($files -and $files.Count -gt 0) { $r['HDROP'] = ($files -join "|") }
+} catch { $r['HDROP_err'] = $_.Exception.Message }
+$r | ConvertTo-Json -Compress
+`;
+
+    const isDev = !app.isPackaged;
+    const logDir = isDev
+      ? path.join(__dirname, '..', 'data', 'logs')
+      : path.join(path.dirname(app.getPath('exe')), 'data', 'logs');
+    const psPath = path.join(logDir, '_clip_paste.ps1');
+    try {
+      if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
+      fs.writeFileSync(psPath, psScript, 'utf-8');
+    } catch (e) {
+      videoLog('checkClipboardVideoForPaste: cannot write PS temp file:', e.message);
+      resolve(null);
+      return;
+    }
+
+    exec(`powershell -NoProfile -ExecutionPolicy Bypass -File "${psPath}"`, {
+      encoding: 'utf-8',
+      timeout: 3000,
+      windowsHide: true,
+    }, (err, stdout) => {
+      try { fs.unlinkSync(psPath); } catch {}
+
+      if (err) { resolve(null); return; }
+      const raw = (stdout || '').trim();
+      if (!raw) { resolve(null); return; }
+
+      let ps = {};
+      try { ps = JSON.parse(raw); } catch { resolve(null); return; }
+
+      if (ps.HDROP) {
+        const filePaths = ps.HDROP.split('|').filter(Boolean);
+        const vp = filePaths.find(p => VIDEO_EXTENSIONS.test(p));
+        if (vp) {
+          videoLog('checkClipboardVideoForPaste found via HDROP:', vp);
+          resolve(readVideoFileData(vp));
+          return;
+        }
+      }
+      resolve(null);
+    });
+  });
+}
+
+/**
+ * 读取视频文件并返回 dataUrl 数据（不发送 IPC）
+ * @param {string} videoPath
+ * @returns {{dataUrl:string,fileName:string,fileSize:number}|null}
+ */
+function readVideoFileData(videoPath) {
+  try {
+    if (!fs.existsSync(videoPath)) {
+      videoLog('readVideoFileData: file not found:', videoPath);
+      return null;
+    }
+    const stat = fs.statSync(videoPath);
+    const ext = path.extname(videoPath).toLowerCase();
+    const mime = VIDEO_MIME_MAP[ext] || 'video/mp4';
+    const buffer = fs.readFileSync(videoPath);
+    const base64 = buffer.toString('base64');
+    return {
+      dataUrl: `data:${mime};base64,${base64}`,
+      fileName: path.basename(videoPath),
+      fileSize: stat.size,
+    };
+  } catch (err) {
+    videoLog('readVideoFileData error:', err.message);
+    return null;
+  }
+}
+
+module.exports = { initClipboardMonitor, stopClipboardMonitor, videoLog, checkClipboardVideoForPaste };

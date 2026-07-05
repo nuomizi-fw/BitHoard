@@ -121,6 +121,17 @@ function registerClipboardIpc() {
       win.webContents.send('toast:show', data);
     }
   });
+
+  // 按需检测剪贴板视频（详情页 Ctrl+V 兜底，返回 dataUrl 或 null）
+  ipcMain.handle('clipboard:check-video', async () => {
+    try {
+      const { checkClipboardVideoForPaste } = require('../clipboard-monitor');
+      return await checkClipboardVideoForPaste();
+    } catch (e) {
+      log('clipboard:check-video error:', e.message);
+      return null;
+    }
+  });
 }
 
 module.exports = { registerClipboardIpc };

@@ -60,6 +60,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 读取剪贴板图像（返回 data URL 或 null）
   readClipboardImage: () => ipcRenderer.invoke('clipboard:read-image'),
 
+  // 按需检测剪贴板视频（详情页 Ctrl+V 兜底，返回 {dataUrl,fileName,fileSize} 或 null）
+  checkClipboardVideo: () => ipcRenderer.invoke('clipboard:check-video'),
+
   // 调试：列出剪贴板所有可用格式（返回 Electron + PowerShell 枚举结果）
   debugClipboardFormats: () => ipcRenderer.invoke('clipboard:debug-formats'),
 

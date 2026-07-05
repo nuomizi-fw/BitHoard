@@ -53,7 +53,6 @@
     let tmdbSearchResultsLoading = false;
 
     // 视频粘贴（详情页）
-    let unsubVideo = null;
     let videoUploading = false;
 
     onMount(async () => {
@@ -68,17 +67,10 @@
         }
         // 全局监听粘贴事件，用于截图和视频上传
         document.addEventListener("paste", handlePaste, true);
-        // 监听剪贴板轮询推送的视频
-        if (window.electronAPI?.onClipboardVideo) {
-            unsubVideo = window.electronAPI.onClipboardVideo(async ({ dataUrl, fileName, fileSize }) => {
-                await uploadPastedVideo(dataUrl, fileName);
-            });
-        }
     });
 
     onDestroy(() => {
         document.removeEventListener("paste", handlePaste, true);
-        if (typeof unsubVideo === 'function') unsubVideo();
     });
 
     function syncEditFields() {
@@ -179,8 +171,19 @@
             }
         }
 
-        // QQ/WeChat 的视频通过 text/uri-list + HDROP 传递，不由 paste 事件处理，
-        // 而是由主进程剪贴板轮询 → onClipboardVideo IPC 自动上传。
+        // 浏览器 paste 事件未拿到视频（QQ/微信视频通过 text/uri-list + HDROP 传递），
+        // 通过 IPC 让主进程检测剪贴板原生格式作为兜底。
+        if (window.electronAPI?.checkClipboardVideo) {
+            e.preventDefault();
+            e.stopPropagation();
+            window.electronAPI.checkClipboardVideo().then(async (result) => {
+                if (result?.dataUrl) {
+                    await uploadPastedVideo(result.dataUrl, result.fileName);
+                }
+            }).catch((err) => {
+                console.error("checkClipboardVideo IPC error:", err);
+            });
+        }
     }
 
     // 上传粘贴的视频（来自 onClipboardVideo 或 handlePaste）
