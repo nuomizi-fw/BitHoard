@@ -8,8 +8,8 @@ export const BTIH_PATTERNS = {
   hex: /\b([a-fA-F0-9]{40})\b/g,
   /** Base32 编码 32 位 BTIH hash */
   base32: /\b([A-Z2-7a-z2-7]{32})\b/gi,
-  /** 标准 magnet URI */
-  magnet: /magnet:\?xt=urn:btih:[a-zA-Z0-9]{32,}/gi,
+  /** 标准 magnet URI（hash 限定大写 Base32 防误匹配，dn 值可含空格） */
+  magnet: /magnet:\?xt=urn:btih:(?:[a-fA-F0-9]{40}|[A-Z2-7]{32})(?=&|\r|\n|$)(?:&[a-zA-Z]+=[^&\r\n]+)*/gi,
   /** .torrent 文件 URL */
   torrentUrl: /https?:\/\/[^\s"'<>]+\.torrent/gi,
   /** ed2k 链接 */

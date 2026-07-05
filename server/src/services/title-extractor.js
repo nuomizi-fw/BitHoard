@@ -92,7 +92,7 @@ export function extractCandidateTitle(contextText, magnetUri) {
   }
 
   // 2) 从 BTIH hash 中提取 hash 值，在上下文中定位其所在行
-  const hashMatch = magnetUri.match(/btih:([a-fA-F0-9]{40}|[A-Z2-7a-z2-7]{32})/i);
+  const hashMatch = magnetUri.match(/btih:([a-fA-F0-9]{40}|[A-Z2-7]{32})/i);
   const hash = hashMatch ? hashMatch[1] : null;
 
   const lines = contextText.split(/\r?\n/);
