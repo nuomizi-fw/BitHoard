@@ -5,7 +5,7 @@ import { dbWrite } from '../database/helpers.js';
 import sharp from 'sharp';
 import torrentParser from '../services/torrent-parser.js';
 import tmdbService from '../services/tmdb.js';
-import { extractCandidateTitle, extractDnName } from '../services/title-extractor.js';
+import { extractCandidateTitle, extractDnName, extractContextSnippet } from '../services/title-extractor.js';
 import { buildResourceWhereClause, buildOrderClause, SCREENSHOT_SUBQUERY } from '../lib/query-builder.js';
 
 import { cacheFilesFromTorrent } from '../services/file-cache.js';
@@ -222,48 +222,95 @@ router.post('/import-torrent', async (req, res) => {
  * Body: { links: [{ uri, type }], sourceApp?, sourceProcess?, contextText?, suggestedTitle? }
  */
 router.post('/', async (req, res) => {
+  console.log('[resources] POST / START, body keys:', Object.keys(req.body));
+  try {
   const { links, sourceApp, sourceProcess, contextText, suggestedTitle } = req.body;
+  console.log('[resources] POST / links:', links?.length, 'ctxLen:', contextText?.length || 0, 'suggestedTitle:', (suggestedTitle || '').substring(0, 40));
 
   if (!links || !Array.isArray(links)) {
+    console.log('[resources] POST / BAD_REQUEST: no links');
     return res.status(400).json({ error: 'Links array required' });
   }
 
   const db = getDb();
+  console.log('[resources] POST / db ok, loop over', links.length, 'links');
   const results = [];
 
-  for (const link of links) {
-    // 去重检查
-    const existing = db.prepare('SELECT id FROM resource WHERE magnet_uri = ? AND is_deleted = 0').get(link.uri);
-    if (existing) {
-      results.push({ id: existing.id, uri: link.uri, skipped: true, reason: 'duplicate' });
-      continue;
+  for (let i = 0; i < links.length; i++) {
+    const link = links[i];
+    try {
+      const t0 = Date.now();
+      console.log(`[resources] POST / [${i}] dedup: ${link.uri.substring(0, 60)}`);
+
+      // 先提取标题（无论插入还是复活都需要）
+      let title;
+      if (link.title && link.title.trim()) {
+        title = link.title.trim();
+        console.log(`[resources] POST / [${i}] title=link.title "${title.substring(0, 30)}"`);
+      } else if (suggestedTitle && suggestedTitle.trim()) {
+        title = suggestedTitle.trim();
+        console.log(`[resources] POST / [${i}] title=suggestedTitle "${title.substring(0, 30)}"`);
+      } else if (contextText && contextText.trim()) {
+        const t1 = Date.now();
+        const extracted = extractCandidateTitle(contextText, link.uri);
+        title = extracted.suggestedTitle;
+        console.log(`[resources] POST / [${i}] title=context(source=${extracted.source}) "${title.substring(0, 30)}" (${Date.now() - t1}ms)`);
+      } else {
+        title = extractMagnetName(link.uri) || '未命名资源';
+        console.log(`[resources] POST / [${i}] title=fallback "${title.substring(0, 30)}"`);
+      }
+
+      const contextSnippet = contextText ? extractContextSnippet(contextText, link.uri) : '';
+
+      // 去重查全表（magnet_uri 有 UNIQUE 约束，不能只看 is_deleted=0）
+      const existing = db.prepare('SELECT id, is_deleted FROM resource WHERE magnet_uri = ?').get(link.uri);
+      if (existing) {
+        if (existing.is_deleted) {
+          // 软删除记录：原地复活，更新标题、来源、上下文
+          await dbWrite(
+            `UPDATE resource SET is_deleted = 0, status = 'draft',
+               title = ?, source_app = ?, source_process = ?, raw_context = ?,
+               updated_at = datetime('now')
+             WHERE id = ?`,
+            title, sourceApp || 'unknown', sourceProcess || '', contextSnippet, existing.id
+          );
+          console.log(`[resources] POST / [${i}] REACTIVATED id=${existing.id} (was soft-deleted)`);
+          results.push({ id: existing.id, uri: link.uri, created: true, suggestedTitle: title, reactivated: true });
+        } else {
+          console.log(`[resources] POST / [${i}] SKIP dup id=${existing.id}`);
+          results.push({ id: existing.id, uri: link.uri, skipped: true, reason: 'duplicate' });
+        }
+        continue;
+      }
+
+      const id = uuidv4();
+
+      console.log(`[resources] POST / [${i}] dbWrite INSERT...`);
+      const t3 = Date.now();
+      await dbWrite(
+        `INSERT INTO resource (id, magnet_uri, title, source_app, source_process, raw_context, status)
+         VALUES (?, ?, ?, ?, ?, ?, 'draft')`,
+        id, link.uri, title, sourceApp || 'unknown', sourceProcess || '', contextSnippet
+      );
+      console.log(`[resources] POST / [${i}] dbWrite done ${Date.now() - t3}ms, loop ${Date.now() - t0}ms`);
+
+      results.push({ id, uri: link.uri, created: true, suggestedTitle: title });
+    } catch (err) {
+      console.error(`[resources] POST / [${i}] ERROR:`, err.message, err.stack);
+      // 单条失败记录错误但不阻塞其他链接，继续处理下一条
+      results.push({ uri: link.uri, error: err.message });
     }
-
-    const id = uuidv4();
-
-    // 标题提取优先级：前端传入 suggestedTitle > contextText 上下文解析 > dn= 参数 > 回退
-    let title;
-    if (link.title && link.title.trim()) {
-      title = link.title.trim();
-    } else if (suggestedTitle && suggestedTitle.trim()) {
-      title = suggestedTitle.trim();
-    } else if (contextText && contextText.trim()) {
-      const extracted = extractCandidateTitle(contextText, link.uri);
-      title = extracted.suggestedTitle;
-    } else {
-      title = extractMagnetName(link.uri) || '未命名资源';
-    }
-
-    await dbWrite(
-      `INSERT INTO resource (id, magnet_uri, title, source_app, source_process, raw_context, status)
-       VALUES (?, ?, ?, ?, ?, ?, 'draft')`,
-      id, link.uri, title, sourceApp || 'unknown', sourceProcess || '', contextText || ''
-    );
-
-    results.push({ id, uri: link.uri, created: true, suggestedTitle: title });
   }
 
+  console.log('[resources] POST / ALL DONE, sending', results.length, 'results');
   res.status(201).json({ results });
+  console.log('[resources] POST / response sent');
+  } catch (err) {
+    console.error('[resources] POST / FATAL:', err.message, err.stack);
+    if (!res.headersSent) {
+      res.status(500).json({ error: err.message || 'Internal Server Error' });
+    }
+  }
 });
 
 /**
