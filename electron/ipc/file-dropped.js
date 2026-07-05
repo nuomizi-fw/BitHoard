@@ -4,14 +4,19 @@
 const { ipcMain } = require('electron');
 const fs = require('fs');
 const path = require('path');
+const { createLogger } = require('../logger');
+
+const log = createLogger('ipc-file-dropped');
 
 function registerFileDroppedIpc() {
+  log('Registering file-dropped IPC handler');
   ipcMain.handle('file:dropped', async (event, filePaths) => {
     const results = [];
 
     for (const filePath of filePaths) {
       const ext = path.extname(filePath).toLowerCase();
       if (ext === '.torrent') {
+        log('Torrent file dropped:', path.basename(filePath));
         const data = fs.readFileSync(filePath);
         results.push({ type: 'torrent', name: path.basename(filePath), data: data.toString('base64') });
       } else {

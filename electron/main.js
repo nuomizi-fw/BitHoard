@@ -4,6 +4,9 @@ const { createWindow } = require('./window');
 const { createTray, destroyTray } = require('./tray');
 const { registerShortcuts, unregisterAll } = require('./shortcuts');
 const { initClipboardMonitor, stopClipboardMonitor } = require('./clipboard-monitor');
+const { createLogger, closeAllLoggers } = require('./logger');
+
+const log = createLogger('main');
 
 // ── 拆分后的 IPC 处理器 ──
 const { registerClipboardIpc } = require('./ipc/clipboard');
@@ -45,24 +48,24 @@ app.whenReady().then(async () => {
     const constants = await import('../server/src/lib/constants.js');
     btihPatterns = constants.BTIH_PATTERNS;
   } catch (err) {
-    console.warn('[main] Failed to load BTIH_PATTERNS, clipboard-monitor will use defaults:', err.message);
+    log('Failed to load BTIH_PATTERNS, clipboard-monitor will use defaults:', err.message);
   }
 
   // ── 生产模式：嵌入启动后端服务器 ──
   // 开发模式下由 pnpm dev:server 单独启动，避免端口冲突
   if (!isDev) {
-    console.log('[main] Starting backend server...');
+    log('Starting backend server...');
     try {
       serverInstance = await startServer();
-      console.log('[main] Server ready');
+      log('Server ready');
     } catch (err) {
-      console.error('[main] Server start failed:', err.message);
+      log('Server start failed:', err.message);
       dialog.showErrorBox('启动失败', `后端服务启动失败，请尝试重新运行。\n\n${err.message}`);
       app.quit();
       return;
     }
   } else {
-    console.log('[dev] Using pnpm dev:server for backend');
+    log('[dev] Using pnpm dev:server for backend');
   }
 
   // ── 创建窗口 ──
@@ -100,12 +103,15 @@ app.on('before-quit', async () => {
   // 注销全局快捷键
   unregisterAll();
 
+  // 关闭所有日志流
+  closeAllLoggers();
+
   // 停止后端服务器（关闭 HTTP/WS、数据库连接、轮询定时器）
   if (stopServerFn) {
     try {
       await stopServerFn();
     } catch (err) {
-      console.error('[main] Server stop error:', err.message);
+      log('Server stop error:', err.message);
     }
     stopServerFn = null;
     serverInstance = null;

@@ -30,6 +30,21 @@
     let screenshots = [];
     let unsubImage = null;
 
+    // 视频缓存：粘贴的视频暂存在此，保存/下载时一并上传
+    // { dataUrl, fileName, fileSize, oversized }
+    let videos = [];
+    let unsubVideo = null;
+
+    // 上传进度: { 'video-0': { loaded, total }, 'video-1': ... }
+    let videoProgress = {};
+
+    function formatFileSize(bytes) {
+        if (!bytes) return '';
+        if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(0) + ' KB';
+        if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+        return (bytes / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
+    }
+
     function dataUrlToBlob(dataUrl) {
         const parts = dataUrl.split(',');
         const mime = parts[0].match(/:(.*?);/)?.[1] || 'image/png';
@@ -43,18 +58,37 @@
         screenshots = screenshots.filter((_, i) => i !== idx);
     }
 
-    // 监听 Electron 后台轮询推送的剪贴板图像
+    function removeVideo(idx) {
+        videos = videos.filter((_, i) => i !== idx);
+    }
+
+    // 监听 Electron 后台轮询推送的剪贴板图像和视频
     onMount(() => {
+        window.electronAPI?.logVideo?.('[ToastItem] onMount, isLinkToast=' + !!toast.links + ' hasVideoListener=' + !!window.electronAPI?.onClipboardVideo);
         if (window.electronAPI?.onClipboardImage) {
             unsubImage = window.electronAPI.onClipboardImage(({ dataUrl }) => {
-                if (!isLinkToast) return;
+                window.electronAPI?.logVideo?.('[ToastItem] screenshot received, isLinkToast=' + !!toast.links);
+                if (!toast.links) return;
                 screenshots = [...screenshots, { dataUrl }];
+            });
+        }
+        if (window.electronAPI?.onClipboardVideo) {
+            unsubVideo = window.electronAPI.onClipboardVideo(({ dataUrl, fileName, fileSize, oversized }) => {
+                window.electronAPI?.logVideo?.('[ToastItem] video received: ' + fileName + ' size=' + fileSize + ' isLinkToast=' + !!toast.links + ' videosBefore=' + videos.length);
+                console.log('[ToastItem] onClipboardVideo received:', fileName, fileSize);
+                if (!toast.links) {
+                    window.electronAPI?.logVideo?.('[ToastItem] SKIPPED video: not a link toast (toast.links=' + JSON.stringify(toast.links) + ')');
+                    return;
+                }
+                videos = [...videos, { dataUrl, fileName, fileSize, oversized }];
+                window.electronAPI?.logVideo?.('[ToastItem] video ADDED, videosAfter=' + videos.length);
             });
         }
     });
 
     onDestroy(() => {
         if (typeof unsubImage === 'function') unsubImage();
+        if (typeof unsubVideo === 'function') unsubVideo();
     });
 
     // 判断是否为磁链检测类 toast
@@ -127,6 +161,23 @@
                             console.error("Screenshot upload error:", e);
                         }
                     }
+                    // 上传所有粘贴的视频（带进度）
+                    for (let vi = 0; vi < videos.length; vi++) {
+                        const vid = videos[vi];
+                        const key = `video-${vi}`;
+                        try {
+                            await api.uploadVideo(
+                                r.id,
+                                dataUrlToBlob(vid.dataUrl),
+                                vid.fileName,
+                                (e) => { videoProgress = { ...videoProgress, [key]: { loaded: e.loaded, total: e.total } }; }
+                            );
+                        } catch (e) {
+                            console.error("Video upload error:", e);
+                        } finally {
+                            videoProgress = { ...videoProgress, [key]: undefined };
+                        }
+                    }
                 }
             }
 
@@ -171,6 +222,23 @@
                             console.error("Screenshot upload error:", e);
                         }
                     }
+                    // 上传所有粘贴的视频（带进度）
+                    for (let vi = 0; vi < videos.length; vi++) {
+                        const vid = videos[vi];
+                        const key = `video-${vi}`;
+                        try {
+                            await api.uploadVideo(
+                                r.id,
+                                dataUrlToBlob(vid.dataUrl),
+                                vid.fileName,
+                                (e) => { videoProgress = { ...videoProgress, [key]: { loaded: e.loaded, total: e.total } }; }
+                            );
+                        } catch (e) {
+                            console.error("Video upload error:", e);
+                        } finally {
+                            videoProgress = { ...videoProgress, [key]: undefined };
+                        }
+                    }
                     // 触发下载
                     try {
                         await api.createDownload({
@@ -210,6 +278,7 @@
                     context_text: toast.contextText || "",
                     suggested_title: isMultiLink ? "" : (title || ""),
                     screenshots: screenshots.map(s => s.dataUrl),
+                    videos: videos.map(v => ({ dataUrl: v.dataUrl, fileName: v.fileName, fileSize: v.fileSize })),
                 }))
             ]);
             dispatch("dismiss");
@@ -298,17 +367,42 @@
                     </div>
 
                     <div class="field">
-                        <label>截图</label>
-                        <div class="screenshot-area" class:has-shots={screenshots.length > 0}>
-                            {#if screenshots.length > 0}
-                                <div class="screenshot-thumbs">
+                        <label>📎 媒体附件</label>
+                        <div class="media-area" class:has-media={screenshots.length > 0 || videos.length > 0}>
+                            {#if screenshots.length > 0 || videos.length > 0}
+                                <div class="media-thumbs">
                                     {#each screenshots as shot, i}
-                                        <div class="shot-thumb">
+                                        <div class="media-thumb">
                                             <img src={shot.dataUrl} alt="截图 {i + 1}" />
                                             <button
-                                                class="shot-remove"
+                                                class="media-remove"
                                                 on:click={() => removeScreenshot(i)}
-                                                title="移除"
+                                                title="移除截图"
+                                            >
+                                                <X size={10} />
+                                            </button>
+                                        </div>
+                                    {/each}
+                                    {#each videos as vid, i}
+                                        {@const totalAttachments = screenshots.length + videos.length}
+                                        <div class="media-thumb video-thumb">
+                                            <video src={vid.dataUrl} muted loop playsinline
+                                                on:mouseenter={(e) => e.target.play()}
+                                                on:mouseleave={(e) => { e.target.pause(); e.target.currentTime = 0; }}
+                                            />
+                                            <div class="video-badge">🎬</div>
+                                            {#if vid.oversized}
+                                                <div class="video-oversize-warn" title="文件较大 ({formatFileSize(vid.fileSize)})，上传可能较慢">⚠️</div>
+                                            {/if}
+                                            {#if videoProgress['video-' + i]?.loaded}
+                                                <div class="video-progress-bar">
+                                                    <div class="video-progress-fill" style="width: {videoProgress['video-' + i].loaded / videoProgress['video-' + i].total * 100}%"></div>
+                                                </div>
+                                            {/if}
+                                            <button
+                                                class="media-remove"
+                                                on:click={() => removeVideo(i)}
+                                                title="移除视频"
                                             >
                                                 <X size={10} />
                                             </button>
@@ -316,8 +410,8 @@
                                     {/each}
                                 </div>
                             {/if}
-                            <p class="screenshot-hint">
-                                📋 复制图像后自动捕获为此资源的截图
+                            <p class="media-hint">
+                                📋 复制图像或视频后自动捕获为此资源的附件
                             </p>
                         </div>
                     </div>
@@ -502,25 +596,25 @@
         border-color: #6366f1;
     }
 
-    .screenshot-area {
+    .media-area {
         display: flex;
         flex-direction: column;
         gap: 8px;
     }
 
-    .screenshot-area.has-shots {
+    .media-area.has-media {
         border: 1px solid #333;
         border-radius: 8px;
         padding: 8px;
     }
 
-    .screenshot-thumbs {
+    .media-thumbs {
         display: flex;
         flex-wrap: wrap;
         gap: 6px;
     }
 
-    .shot-thumb {
+    .media-thumb {
         position: relative;
         width: 72px;
         height: 72px;
@@ -529,13 +623,51 @@
         border: 1px solid #3a3a3a;
     }
 
-    .shot-thumb img {
+    .media-thumb img,
+    .media-thumb video {
         width: 100%;
         height: 100%;
         object-fit: cover;
     }
 
-    .shot-remove {
+    .video-thumb {
+        background: #111;
+    }
+
+    .video-badge {
+        position: absolute;
+        bottom: 2px;
+        left: 2px;
+        font-size: 10px;
+        line-height: 1;
+        pointer-events: none;
+    }
+
+    .video-oversize-warn {
+        position: absolute;
+        top: 2px;
+        left: 2px;
+        font-size: 12px;
+        line-height: 1;
+        cursor: help;
+    }
+
+    .video-progress-bar {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        height: 3px;
+        background: #333;
+    }
+
+    .video-progress-fill {
+        height: 100%;
+        background: #6366f1;
+        transition: width 0.2s;
+    }
+
+    .media-remove {
         position: absolute;
         top: 2px;
         right: 2px;
@@ -553,11 +685,11 @@
         transition: opacity 0.15s;
     }
 
-    .shot-thumb:hover .shot-remove {
+    .media-thumb:hover .media-remove {
         opacity: 1;
     }
 
-    .screenshot-hint {
+    .media-hint {
         color: #555;
         font-size: 11px;
         text-align: center;

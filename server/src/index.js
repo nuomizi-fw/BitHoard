@@ -7,6 +7,9 @@ import { getDb, closeDb } from './database/connection.js';
 import { authMiddleware } from './middleware/auth.js';
 import { ipWhitelistMiddleware } from './middleware/ip-whitelist.js';
 import wsService from './websocket/index.js';
+import { createLogger, closeAllLoggers } from './lib/logger.js';
+
+const log = createLogger('server');
 
 // 路由
 import authRoutes from './routes/auth.js';
@@ -27,7 +30,7 @@ expressWs(app);
 // 最顶层请求追踪（在所有中间件之前，排查请求是否到达 Express）
 app.use((req, res, next) => {
   if (req.method === 'POST' || req.method === 'OPTIONS') {
-    console.log(`[server] >>> ${req.method} ${req.path} from ${req.ip}`);
+    log('>>>', req.method, req.path, 'from', req.ip);
   }
   next();
 });
@@ -41,9 +44,9 @@ app.use('/api/resources', (req, res, next) => {
   if (req.method === 'POST') {
     try {
       const bodyStr = JSON.stringify(req.body);
-      console.log(`[server] POST /api/resources body size=${bodyStr.length} chars, links=${req.body?.links?.length}`);
+      log('POST /api/resources body size=' + bodyStr.length + ' chars, links=' + (req.body?.links?.length || 0));
     } catch (e) {
-      console.error('[server] POST /api/resources JSON.stringify failed:', e.message);
+      log('POST /api/resources JSON.stringify failed:', e.message);
     }
   }
   next();
@@ -91,10 +94,10 @@ if (fs.existsSync(webDistPath)) {
 
 // ── 全局错误处理（防止 async 路由异常导致客户端永久挂起）──
 app.use((err, req, res, _next) => {
-  console.error('[server] UNHANDLED ERROR:', req.method, req.path);
-  console.error('[server]', err.stack || err.message);
+  log('UNHANDLED ERROR:', req.method, req.path);
+  log(err.stack || err.message);
   if (res.headersSent) {
-    console.error('[server] headers already sent, cannot respond');
+    log('headers already sent, cannot respond');
     return;
   }
   res.status(err.status || 500).json({
@@ -125,8 +128,8 @@ export async function startServer(options = {}) {
 
   return new Promise((resolve, reject) => {
     httpServer = app.listen(port, host, () => {
-      console.log(`[BitHoard] Server running at http://${host}:${port}`);
-      console.log(`[BitHoard] WebSocket at ws://${host}:${port}/ws`);
+      log('Server running at http://' + host + ':' + port);
+      log('WebSocket at ws://' + host + ':' + port + '/ws');
       resolve({ app, server: httpServer });
     });
     httpServer.on('error', reject);
@@ -149,6 +152,9 @@ export async function stopServer() {
 
   // 3. 关闭数据库
   closeDb();
+
+  // 4. 关闭所有日志流
+  closeAllLoggers();
 }
 
 // ── 独立运行时自动启动 ──
@@ -157,7 +163,7 @@ export async function stopServer() {
 const isMainModule = process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
 if (isMainModule) {
   startServer().catch((err) => {
-    console.error('[BitHoard] Failed to start:', err);
+    log('Failed to start:', err);
     process.exit(1);
   });
 

@@ -1,5 +1,8 @@
 import { v4 as uuidv4 } from 'uuid';
 import { getDb } from '../database/connection.js';
+import { createLogger } from '../lib/logger.js';
+
+const log = createLogger('file-cache');
 
 /**
  * 清空并重建资源的文件缓存

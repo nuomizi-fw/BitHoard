@@ -154,6 +154,47 @@ export const api = {
   deleteScreenshot: (resourceId, screenshotId) =>
     requestJson(`/resources/${resourceId}/screenshots/${screenshotId}`, { method: 'DELETE' }),
 
+  // Videos
+  getVideoUrl: (resourceId, videoId) => {
+    let url = `${API_BASE}/resources/${resourceId}/videos/${videoId}`;
+    if (authToken) url += `?token=${encodeURIComponent(authToken)}`;
+    return url;
+  },
+
+  /**
+   * 上传视频附件（支持进度回调）
+   * @param {string} resourceId
+   * @param {Blob} videoBlob
+   * @param {string} fileName
+   * @param {(e: {loaded: number, total: number}) => void} [onProgress]
+   * @returns {Promise<object>}
+   */
+  uploadVideo: (resourceId, videoBlob, fileName, onProgress) =>
+    new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      let url = `${API_BASE}/resources/${resourceId}/videos`;
+      if (authToken) url += (url.includes('?') ? '&' : '?') + `token=${encodeURIComponent(authToken)}`;
+      xhr.open('POST', url);
+      xhr.setRequestHeader('X-File-Name', encodeURIComponent(fileName || 'video.mp4'));
+      if (authToken) xhr.setRequestHeader('Authorization', `Bearer ${authToken}`);
+      if (onProgress) {
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) onProgress({ loaded: e.loaded, total: e.total });
+        };
+      }
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try { resolve(JSON.parse(xhr.responseText)); } catch { resolve({}); }
+        } else {
+          reject(new Error(`Video upload failed: ${xhr.status}`));
+        }
+      };
+      xhr.onerror = () => reject(new Error('Video upload network error'));
+      xhr.ontimeout = () => reject(new Error('Video upload timeout'));
+      xhr.timeout = 120_000; // 2 min timeout for video
+      xhr.send(videoBlob);
+    }),
+
   // Torrent
   getTorrentUrl: (resourceId) => {
     let url = `${API_BASE}/resources/${resourceId}/torrent`;

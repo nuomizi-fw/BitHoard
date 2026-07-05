@@ -1,5 +1,8 @@
 import bencode from 'bencode';
 import crypto from 'crypto';
+import { createLogger } from '../lib/logger.js';
+
+const log = createLogger('torrent-parser');
 
 /**
  * .torrent 文件解析服务
@@ -55,7 +58,7 @@ class TorrentParser {
         private: info.private === 1,
       };
     } catch (err) {
-      console.error('[torrent-parser] Parse error:', err.message);
+      log('Parse error:', err.message);
       return null;
     }
   }

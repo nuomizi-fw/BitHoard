@@ -4,6 +4,9 @@
  * 从剪切板/拖拽的原始文本中，结合磁链 URI，智能推测资源标题。
  * 优先级：dn= 参数 > 上下文相邻行分析 > 回退默认名
  */
+import { createLogger } from '../lib/logger.js';
+
+const log = createLogger('title-extractor');
 
 /**
  * 从磁链 URI 的 dn= 参数提取显示名称

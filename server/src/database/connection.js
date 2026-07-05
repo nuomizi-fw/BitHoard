@@ -3,6 +3,9 @@ import fs from 'fs';
 import path from 'path';
 import config from '../config.js';
 import { runMigrations } from './migrations.js';
+import { createLogger } from '../lib/logger.js';
+
+const log = createLogger('db-connection');
 
 let db = null;
 
@@ -11,6 +14,8 @@ let db = null;
  */
 export function getDb() {
   if (db) return db;
+
+  log('Initializing database at:', config.dbPath);
 
   // 确保 data 目录存在
   const dataDir = path.dirname(config.dbPath);
@@ -28,6 +33,7 @@ export function getDb() {
   // 运行迁移
   runMigrations(db);
 
+  log('Database initialized successfully');
   return db;
 }
 
@@ -36,6 +42,7 @@ export function getDb() {
  */
 export function closeDb() {
   if (db) {
+    log('Closing database connection');
     db.close();
     db = null;
   }

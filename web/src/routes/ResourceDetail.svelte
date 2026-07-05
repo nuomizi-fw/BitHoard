@@ -15,6 +15,7 @@
         Film,
         Search as SearchIcon,
         Image,
+        Video,
     } from "lucide-svelte";
     import { showToast } from "../lib/stores/ui.js";
     import { formatFileSize } from "../lib/format.js";
@@ -51,6 +52,10 @@
     let tmdbSearchResults = [];
     let tmdbSearchResultsLoading = false;
 
+    // 视频粘贴（详情页）
+    let unsubVideo = null;
+    let videoUploading = false;
+
     onMount(async () => {
         try {
             resource = await api.getResource(id);
@@ -61,12 +66,19 @@
         } finally {
             loading = false;
         }
-        // 全局监听粘贴事件，用于截图上传
-        document.addEventListener("paste", handlePasteScreenshot, true);
+        // 全局监听粘贴事件，用于截图和视频上传
+        document.addEventListener("paste", handlePaste, true);
+        // 监听剪贴板轮询推送的视频
+        if (window.electronAPI?.onClipboardVideo) {
+            unsubVideo = window.electronAPI.onClipboardVideo(async ({ dataUrl, fileName, fileSize }) => {
+                await uploadPastedVideo(dataUrl, fileName);
+            });
+        }
     });
 
     onDestroy(() => {
-        document.removeEventListener("paste", handlePasteScreenshot, true);
+        document.removeEventListener("paste", handlePaste, true);
+        if (typeof unsubVideo === 'function') unsubVideo();
     });
 
     function syncEditFields() {
@@ -120,8 +132,8 @@
         }
     }
 
-    // 全局粘贴截图捕获（资源详情页任意位置 Ctrl+V 即可粘贴截图）
-    function handlePasteScreenshot(e) {
+    // 全局粘贴捕获（详情页任意位置 Ctrl+V：截图/视频）
+    function handlePaste(e) {
         // 不在输入框/文本域内拦截粘贴
         const tag = e.target?.tagName;
         if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
@@ -130,18 +142,16 @@
         if (!items) return;
 
         for (const item of items) {
-            // Electron 中剪贴板图片的 type 可能是 "image/png" 或空字符串
-            if (
-                item.kind === "file" &&
-                (item.type.startsWith("image/") || item.type === "")
-            ) {
+            if (item.kind !== "file") continue;
+
+            // 截图：image/* 或空 type（Electron 中剪贴板图片）
+            if (item.type.startsWith("image/") || item.type === "") {
                 const blob = item.getAsFile();
                 if (!blob) continue;
 
                 e.preventDefault();
                 e.stopPropagation();
 
-                // 直接上传（已有 resource ID）
                 api.uploadScreenshot(id, blob)
                     .then(async () => {
                         resource = await api.getResource(id);
@@ -151,9 +161,52 @@
                         console.error("Screenshot upload error:", err);
                         showToast({ type: "error", message: "截图上传失败" });
                     });
-                break;
+                return;
+            }
+
+            // 视频：video/* 类型（文件管理器等直接复制文件）
+            if (item.type.startsWith("video/")) {
+                const blob = item.getAsFile();
+                if (!blob) continue;
+
+                e.preventDefault();
+                e.stopPropagation();
+
+                const reader = new FileReader();
+                reader.onload = () => uploadPastedVideo(reader.result, blob.name);
+                reader.readAsDataURL(blob);
+                return;
             }
         }
+
+        // QQ/WeChat 的视频通过 text/uri-list + HDROP 传递，不由 paste 事件处理，
+        // 而是由主进程剪贴板轮询 → onClipboardVideo IPC 自动上传。
+    }
+
+    // 上传粘贴的视频（来自 onClipboardVideo 或 handlePaste）
+    async function uploadPastedVideo(dataUrl, fileName) {
+        if (videoUploading) return;
+        videoUploading = true;
+        try {
+            const blob = dataUrlToBlob(dataUrl);
+            await api.uploadVideo(id, blob, fileName);
+            resource = await api.getResource(id);
+            showToast({ type: "info", message: `视频 ${fileName} 已上传` });
+        } catch (err) {
+            console.error("Video upload error:", err);
+            showToast({ type: "error", message: "视频上传失败: " + err.message });
+        } finally {
+            videoUploading = false;
+        }
+    }
+
+    function dataUrlToBlob(dataUrl) {
+        const parts = dataUrl.split(',');
+        const mime = parts[0].match(/:(.*?);/)?.[1] || 'application/octet-stream';
+        const binary = atob(parts[1]);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+        return new Blob([bytes], { type: mime });
     }
 
     // 标签操作
@@ -430,6 +483,38 @@
                                     alt=""
                                     loading="lazy"
                                 />
+                            </div>
+                        {/each}
+                    </div>
+                </section>
+
+                <!-- 视频 -->
+                <section class="section">
+                    <h3>视频 ({resource.videos?.length || 0})</h3>
+                    <div class="screenshot-upload">
+                        <Video size={16} />
+                        {#if videoUploading}
+                            <span>视频上传中...</span>
+                        {:else if (resource.videos?.length || 0) === 0}
+                            <span>在此页面任意位置 Ctrl+V 粘贴视频，或从 Toast 保存</span>
+                        {:else}
+                            <span>在此页面任意位置 Ctrl+V 继续粘贴</span>
+                        {/if}
+                    </div>
+                    <div class="screenshots-grid">
+                        {#each resource.videos || [] as vid}
+                            <div class="screenshot-item">
+                                <video
+                                    src={api.getVideoUrl(id, vid.id)}
+                                    controls
+                                    preload="metadata"
+                                    style="width: 100%; max-height: 200px;"
+                                >
+                                    您的浏览器不支持视频播放
+                                </video>
+                                <div class="video-meta" style="padding: 4px 8px; font-size: 12px; color: #888;">
+                                    {vid.file_name} · {formatFileSize(vid.file_size)}
+                                </div>
                             </div>
                         {/each}
                     </div>

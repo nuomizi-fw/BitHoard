@@ -2,6 +2,10 @@
  * 数据库迁移脚本
  * 按版本号依次执行，使用 user_version PRAGMA 跟踪当前版本
  */
+import { createLogger } from '../lib/logger.js';
+
+const log = createLogger('db-migrations');
+
 const migrations = [
   {
     version: 1,
@@ -181,6 +185,26 @@ const migrations = [
       ALTER TABLE resource ADD COLUMN raw_context TEXT DEFAULT '';
     `,
   },
+  {
+    version: 4,
+    description: 'Add video attachments table',
+    sql: `
+      CREATE TABLE IF NOT EXISTS video (
+        id TEXT PRIMARY KEY,
+        resource_id TEXT NOT NULL,
+        file_name TEXT DEFAULT '',
+        video BLOB NOT NULL,
+        thumbnail BLOB,
+        file_size INTEGER DEFAULT 0,
+        duration REAL,
+        format TEXT DEFAULT 'mp4',
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        FOREIGN KEY (resource_id) REFERENCES resource(id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX idx_video_resource ON video(resource_id);
+    `,
+  },
 ];
 
 export function runMigrations(db) {
@@ -189,7 +213,7 @@ export function runMigrations(db) {
 
   for (const migration of migrations) {
     if (migration.version > currentVersion) {
-      console.log(`[db] Running migration v${migration.version}: ${migration.description}`);
+      log('Running migration v' + migration.version + ': ' + migration.description);
 
       // 在事务中执行
       db.transaction(() => {
@@ -197,7 +221,7 @@ export function runMigrations(db) {
         db.pragma(`user_version = ${migration.version}`);
       })();
 
-      console.log(`[db] Migration v${migration.version} complete`);
+      log('Migration v' + migration.version + ' complete');
     }
   }
 }

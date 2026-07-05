@@ -1,4 +1,7 @@
 import config from '../config.js';
+import { createLogger } from '../lib/logger.js';
+
+const log = createLogger('tmdb');
 
 /**
  * TMDB 元数据查询服务
@@ -25,7 +28,7 @@ class TMDBService {
       if (!res.ok) return null;
       return res.json();
     } catch (err) {
-      console.error(`[tmdb] ${path} error:`, err.message);
+      log(path + ' error:', err.message);
       return null;
     }
   }
@@ -95,7 +98,7 @@ class TMDBService {
         mediaType: result.media_type,
       };
     } catch (err) {
-      console.error('[tmdb] AutoMatch error:', err.message);
+      log('AutoMatch error:', err.message);
       return null;
     }
   }

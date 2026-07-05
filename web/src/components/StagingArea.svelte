@@ -23,6 +23,18 @@
         }
     }
 
+    async function uploadStagingVideos(resourceId, stagingItem) {
+        if (!stagingItem.videos || stagingItem.videos.length === 0) return;
+        for (const vid of stagingItem.videos) {
+            try {
+                const blob = await (await fetch(vid.dataUrl)).blob();
+                await api.uploadVideo(resourceId, blob, vid.fileName);
+            } catch (e) {
+                console.error("Video upload error:", e);
+            }
+        }
+    }
+
     async function confirmItem(res, idx) {
         console.log('[StagingArea] confirmItem idx=', idx, 'uri=', res.magnet_uri?.substring(0, 60));
         try {
@@ -43,6 +55,7 @@
                     console.log('[StagingArea] confirmItem updating status for', r.id);
                     await api.updateResource(r.id, { status: "active" });
                     await uploadStagingScreenshots(r.id, res);
+                    await uploadStagingVideos(r.id, res);
                 }
             }
             // 从暂存区移除
@@ -81,6 +94,7 @@
                     if (r.created) {
                         await api.updateResource(r.id, { status: "active" });
                         await uploadStagingScreenshots(r.id, res);
+                        await uploadStagingVideos(r.id, res);
                     }
                 }
                 stagingResources.update(arr => arr.filter((_, j) => j !== i));

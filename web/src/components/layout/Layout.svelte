@@ -19,7 +19,7 @@
 
         window.electronAPI.onClipboardDetected((data) => {
             // Electron 剪贴板监控检测到链接，显示富交互 Toast
-            showToast({
+            const toastId = showToast({
                 type: "link-capture",
                 persistent: true,
                 links: data.links || [],
@@ -31,6 +31,7 @@
                         ? `检测到 ${data.links.length} 个链接`
                         : "检测到磁链",
             });
+            window.electronAPI?.logVideo?.('[Layout] toast created id=' + toastId + ' links=' + (data.links?.length||0));
 
             // 同步更新暂存区 (draft 入库由 Toast 按钮触发)
             stagingExpanded.set(data.links?.length > 1);

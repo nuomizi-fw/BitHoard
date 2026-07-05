@@ -6,6 +6,9 @@ import qbClient from '../services/qbittorrent.js';
 import torrentParser from '../services/torrent-parser.js';
 import diskChecker from '../services/disk-check.js';
 import { cacheFilesFromTorrent } from '../services/file-cache.js';
+import { createLogger } from '../lib/logger.js';
+
+const log = createLogger('routes-downloads');
 
 const router = Router();
 
@@ -179,7 +182,7 @@ router.delete('/:id', async (req, res) => {
     try {
       await qbClient.deleteTorrent(download.qb_task_hash, delete_files);
     } catch (err) {
-      console.error('[download] Failed to delete qB task:', err.message);
+      log('Failed to delete qB task:', err.message);
     }
   }
 

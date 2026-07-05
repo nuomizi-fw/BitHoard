@@ -1,5 +1,8 @@
 import { execSync } from 'child_process';
 import config from '../config.js';
+import { createLogger } from '../lib/logger.js';
+
+const log = createLogger('disk-check');
 
 /**
  * 磁盘空间检查服务 (Windows only)
@@ -36,7 +39,7 @@ class DiskChecker {
           : null,
       };
     } catch (err) {
-      console.error('[disk-check] Error:', err.message);
+      log('Error:', err.message);
       return null;
     }
   }

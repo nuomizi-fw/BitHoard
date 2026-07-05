@@ -1,5 +1,8 @@
 const { Tray, Menu, nativeImage } = require('electron');
 const path = require('path');
+const { createLogger } = require('./logger');
+
+const log = createLogger('tray');
 
 let tray = null;
 let isMonitoring = true;
@@ -13,6 +16,7 @@ const TRAY_ICON_DATA = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCA
  * @returns {Tray}
  */
 function createTray(mainWindow, clipboardMonitor) {
+  log('Creating system tray');
   const icon = nativeImage.createFromDataURL(TRAY_ICON_DATA);
   tray = new Tray(icon.resize({ width: 16, height: 16 }));
 
@@ -28,10 +32,12 @@ function createTray(mainWindow, clipboardMonitor) {
       click: (item) => {
         isMonitoring = item.checked;
         if (isMonitoring) {
+          log('Clipboard monitor resumed from tray');
           if (clipboardMonitor?.initClipboardMonitor) {
             clipboardMonitor.initClipboardMonitor(mainWindow);
           }
         } else {
+          log('Clipboard monitor paused from tray');
           if (clipboardMonitor?.stopClipboardMonitor) {
             clipboardMonitor.stopClipboardMonitor();
           }
@@ -83,6 +89,7 @@ function getMonitoringState() {
  * 销毁系统托盘，释放资源防止残留进程
  */
 function destroyTray() {
+  log('Destroying system tray');
   if (tray) {
     tray.destroy();
     tray = null;

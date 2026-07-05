@@ -9,6 +9,9 @@ import { extractCandidateTitle, extractDnName, extractContextSnippet } from '../
 import { buildResourceWhereClause, buildOrderClause, SCREENSHOT_SUBQUERY } from '../lib/query-builder.js';
 
 import { cacheFilesFromTorrent } from '../services/file-cache.js';
+import { createLogger } from '../lib/logger.js';
+
+const log = createLogger('routes-resources');
 
 const router = Router();
 
@@ -77,6 +80,7 @@ router.get('/:id', (req, res) => {
 
   // 关联数据
   const screenshots = db.prepare('SELECT id, width, height, format, "order", created_at FROM screenshot WHERE resource_id = ? ORDER BY "order"').all(id);
+  const videos = db.prepare('SELECT id, file_name, file_size, format, created_at FROM video WHERE resource_id = ? ORDER BY created_at').all(id);
   const files = db.prepare('SELECT * FROM file_cache WHERE resource_id = ? ORDER BY file_index').all(id);
   const tags = db.prepare(`
     SELECT t.* FROM tag t
@@ -95,6 +99,7 @@ router.get('/:id', (req, res) => {
     ...resource,
     torrent_blob: undefined, // 大字段按需获取
     screenshots,
+    videos,
     files,
     tags,
     groups,
@@ -222,42 +227,42 @@ router.post('/import-torrent', async (req, res) => {
  * Body: { links: [{ uri, type }], sourceApp?, sourceProcess?, contextText?, suggestedTitle? }
  */
 router.post('/', async (req, res) => {
-  console.log('[resources] POST / START, body keys:', Object.keys(req.body));
+  log('POST / START, body keys:', Object.keys(req.body));
   try {
   const { links, sourceApp, sourceProcess, contextText, suggestedTitle } = req.body;
-  console.log('[resources] POST / links:', links?.length, 'ctxLen:', contextText?.length || 0, 'suggestedTitle:', (suggestedTitle || '').substring(0, 40));
+  log('POST / links:', links?.length, 'ctxLen:', contextText?.length || 0, 'suggestedTitle:', (suggestedTitle || '').substring(0, 40));
 
   if (!links || !Array.isArray(links)) {
-    console.log('[resources] POST / BAD_REQUEST: no links');
+    log('POST / BAD_REQUEST: no links');
     return res.status(400).json({ error: 'Links array required' });
   }
 
   const db = getDb();
-  console.log('[resources] POST / db ok, loop over', links.length, 'links');
+  log('POST / db ok, loop over', links.length, 'links');
   const results = [];
 
   for (let i = 0; i < links.length; i++) {
     const link = links[i];
     try {
       const t0 = Date.now();
-      console.log(`[resources] POST / [${i}] dedup: ${link.uri.substring(0, 60)}`);
+      log('POST / [' + i + '] dedup: ' + link.uri.substring(0, 60));
 
       // 先提取标题（无论插入还是复活都需要）
       let title;
       if (link.title && link.title.trim()) {
         title = link.title.trim();
-        console.log(`[resources] POST / [${i}] title=link.title "${title.substring(0, 30)}"`);
+        log('POST / [' + i + '] title=link.title "' + title.substring(0, 30) + '"');
       } else if (suggestedTitle && suggestedTitle.trim()) {
         title = suggestedTitle.trim();
-        console.log(`[resources] POST / [${i}] title=suggestedTitle "${title.substring(0, 30)}"`);
+        log('POST / [' + i + '] title=suggestedTitle "' + title.substring(0, 30) + '"');
       } else if (contextText && contextText.trim()) {
         const t1 = Date.now();
         const extracted = extractCandidateTitle(contextText, link.uri);
         title = extracted.suggestedTitle;
-        console.log(`[resources] POST / [${i}] title=context(source=${extracted.source}) "${title.substring(0, 30)}" (${Date.now() - t1}ms)`);
+        log('POST / [' + i + '] title=context(source=' + extracted.source + ') "' + title.substring(0, 30) + '" (' + (Date.now() - t1) + 'ms)');
       } else {
         title = extractMagnetName(link.uri) || '未命名资源';
-        console.log(`[resources] POST / [${i}] title=fallback "${title.substring(0, 30)}"`);
+        log('POST / [' + i + '] title=fallback "' + title.substring(0, 30) + '"');
       }
 
       const contextSnippet = contextText ? extractContextSnippet(contextText, link.uri) : '';
@@ -274,10 +279,10 @@ router.post('/', async (req, res) => {
              WHERE id = ?`,
             title, sourceApp || 'unknown', sourceProcess || '', contextSnippet, existing.id
           );
-          console.log(`[resources] POST / [${i}] REACTIVATED id=${existing.id} (was soft-deleted)`);
+          log('POST / [' + i + '] REACTIVATED id=' + existing.id + ' (was soft-deleted)');
           results.push({ id: existing.id, uri: link.uri, created: true, suggestedTitle: title, reactivated: true });
         } else {
-          console.log(`[resources] POST / [${i}] SKIP dup id=${existing.id}`);
+          log('POST / [' + i + '] SKIP dup id=' + existing.id);
           results.push({ id: existing.id, uri: link.uri, skipped: true, reason: 'duplicate' });
         }
         continue;
@@ -285,28 +290,28 @@ router.post('/', async (req, res) => {
 
       const id = uuidv4();
 
-      console.log(`[resources] POST / [${i}] dbWrite INSERT...`);
+      log('POST / [' + i + '] dbWrite INSERT...');
       const t3 = Date.now();
       await dbWrite(
         `INSERT INTO resource (id, magnet_uri, title, source_app, source_process, raw_context, status)
          VALUES (?, ?, ?, ?, ?, ?, 'draft')`,
         id, link.uri, title, sourceApp || 'unknown', sourceProcess || '', contextSnippet
       );
-      console.log(`[resources] POST / [${i}] dbWrite done ${Date.now() - t3}ms, loop ${Date.now() - t0}ms`);
+      log('POST / [' + i + '] dbWrite done ' + (Date.now() - t3) + 'ms, loop ' + (Date.now() - t0) + 'ms');
 
       results.push({ id, uri: link.uri, created: true, suggestedTitle: title });
     } catch (err) {
-      console.error(`[resources] POST / [${i}] ERROR:`, err.message, err.stack);
+      log('POST / [' + i + '] ERROR:', err.message, err.stack);
       // 单条失败记录错误但不阻塞其他链接，继续处理下一条
       results.push({ uri: link.uri, error: err.message });
     }
   }
 
-  console.log('[resources] POST / ALL DONE, sending', results.length, 'results');
+  log('POST / ALL DONE, sending', results.length, 'results');
   res.status(201).json({ results });
-  console.log('[resources] POST / response sent');
+  log('POST / response sent');
   } catch (err) {
-    console.error('[resources] POST / FATAL:', err.message, err.stack);
+    log('POST / FATAL:', err.message, err.stack);
     if (!res.headersSent) {
       res.status(500).json({ error: err.message || 'Internal Server Error' });
     }
@@ -430,7 +435,7 @@ router.post('/:id/screenshots', async (req, res) => {
 
         format = metadata.format === 'png' ? 'png' : 'jpeg';
       } catch (err) {
-        console.error('[screenshot] Thumbnail generation error:', err.message);
+        log('Thumbnail generation error:', err.message);
         // 如果 sharp 失败，用原图当缩略图
         thumbnail = imageBuffer;
       }
@@ -463,10 +468,116 @@ router.post('/:id/screenshots', async (req, res) => {
         order,
       });
     } catch (err) {
-      console.error('[screenshot] Upload error:', err.message);
+      log('Screenshot upload error:', err.message);
       res.status(500).json({ error: 'Failed to process image' });
     }
   });
+});
+
+/**
+ * 添加视频
+ * POST /api/resources/:id/videos
+ * Content-Type: application/octet-stream (原始二进制)
+ * X-File-Name: 原始文件名 (URL 编码)
+ */
+router.post('/:id/videos', async (req, res) => {
+  const { id } = req.params;
+  const db = getDb();
+
+  const resource = db.prepare('SELECT id, status FROM resource WHERE id = ?').get(id);
+  if (!resource) {
+    return res.status(404).json({ error: 'Resource not found' });
+  }
+
+  const fileName = decodeURIComponent(req.headers['x-file-name'] || 'video.mp4');
+
+  // 接收原始视频二进制
+  const chunks = [];
+  req.on('data', chunk => chunks.push(chunk));
+  req.on('end', async () => {
+    try {
+      const videoBuffer = Buffer.concat(chunks);
+      const ext = fileName.split('.').pop()?.toLowerCase() || 'mp4';
+
+      const videoId = uuidv4();
+
+      await dbWrite(
+        `INSERT INTO video (id, resource_id, file_name, video, file_size, format)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        videoId, id, fileName, videoBuffer, videoBuffer.length, ext
+      );
+
+      // 自动提升状态
+      if (resource.status === 'draft') {
+        await dbWrite(
+          "UPDATE resource SET status = 'active', updated_at = datetime('now') WHERE id = ?",
+          id
+        );
+      }
+
+      res.status(201).json({
+        id: videoId,
+        file_name: fileName,
+        file_size: videoBuffer.length,
+        format: ext,
+      });
+    } catch (err) {
+      log('Video upload error:', err.message);
+      res.status(500).json({ error: 'Failed to store video' });
+    }
+  });
+});
+
+/**
+ * 获取视频
+ * GET /api/resources/:id/videos/:videoId
+ * 支持 Range 请求，方便 <video> 标签 seek
+ */
+router.get('/:id/videos/:videoId', (req, res) => {
+  const db = getDb();
+  const { id, videoId } = req.params;
+
+  const video = db.prepare(
+    'SELECT * FROM video WHERE id = ? AND resource_id = ?'
+  ).get(videoId, id);
+
+  if (!video) {
+    return res.status(404).json({ error: 'Video not found' });
+  }
+
+  const videoBuffer = video.video;
+  const fileSize = videoBuffer.length;
+  const mimeMap = {
+    'mp4': 'video/mp4', 'webm': 'video/webm', 'mkv': 'video/x-matroska',
+    'avi': 'video/x-msvideo', 'mov': 'video/quicktime', 'wmv': 'video/x-ms-wmv',
+    'flv': 'video/x-flv', 'm4v': 'video/mp4',
+  };
+  const contentType = mimeMap[video.format] || 'video/mp4';
+
+  const range = req.headers.range;
+  if (range) {
+    const parts = range.replace(/bytes=/, '').split('-');
+    const start = parseInt(parts[0], 10);
+    const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+    const chunkSize = (end - start) + 1;
+
+    res.status(206);
+    res.set({
+      'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+      'Accept-Ranges': 'bytes',
+      'Content-Length': chunkSize,
+      'Content-Type': contentType,
+    });
+    res.send(videoBuffer.slice(start, end + 1));
+  } else {
+    res.set({
+      'Content-Type': contentType,
+      'Content-Length': fileSize,
+      'Accept-Ranges': 'bytes',
+      'Cache-Control': 'max-age=3600',
+    });
+    res.send(videoBuffer);
+  }
 });
 
 /**

@@ -1,4 +1,7 @@
 import config from '../config.js';
+import { createLogger } from '../lib/logger.js';
+
+const log = createLogger('qbittorrent');
 
 /**
  * qBittorrent API 客户端 (v4.5.0.10)
@@ -42,7 +45,7 @@ class QBittorrentClient {
       return true;
     } catch (err) {
       this.connected = false;
-      console.error('[qbittorrent] Login error:', err.message);
+      log('Login error:', err.message);
       return false;
     }
   }
@@ -107,7 +110,7 @@ class QBittorrentClient {
       if (!res.ok) return null;
       return res.json();
     } catch (err) {
-      console.error(`[qbittorrent] ${endpoint} error:`, err.message);
+      log(endpoint + ' error:', err.message);
       return null;
     }
   }

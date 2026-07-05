@@ -2,6 +2,9 @@ import { Router } from 'express';
 import jwt from 'jsonwebtoken';
 import config from '../config.js';
 import qbClient from '../services/qbittorrent.js';
+import { createLogger } from '../lib/logger.js';
+
+const log = createLogger('routes-auth');
 
 const router = Router();
 
@@ -67,7 +70,7 @@ router.put('/password', (req, res) => {
 
   // 运行时更新密码
   config.adminPassword = newPassword;
-  console.log('[auth] Admin password changed');
+  log('Admin password changed');
 
   res.json({ success: true });
 });
@@ -115,7 +118,7 @@ router.put('/config', (req, res) => {
     }
   }
 
-  console.log('[auth] Runtime config updated');
+  log('Runtime config updated');
   res.json({ success: true });
 });
 

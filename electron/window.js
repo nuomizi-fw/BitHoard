@@ -1,5 +1,8 @@
 const { BrowserWindow } = require('electron');
 const path = require('path');
+const { createLogger } = require('./logger');
+
+const log = createLogger('window');
 
 /**
  * 创建主窗口
@@ -25,14 +28,24 @@ function createWindow(isDev) {
   });
 
   if (isDev) {
+    log('Dev mode: loading http://localhost:5173');
     win.loadURL('http://localhost:5173');
     win.webContents.openDevTools({ mode: 'detach' });
   } else {
     // 生产模式：后端 Express 服务器同时 serve 前端静态文件
+    log('Production mode: loading http://127.0.0.1:13002');
     win.loadURL('http://127.0.0.1:13002');
   }
 
+  // F12 打开/关闭 DevTools（开发 & 生产均可用）
+  win.webContents.on('before-input-event', (event, input) => {
+    if (input.key === 'F12' && input.type === 'keyDown') {
+      win.webContents.toggleDevTools();
+    }
+  });
+
   win.once('ready-to-show', () => {
+    log('Window ready-to-show');
     win.show();
   });
 

@@ -1,6 +1,9 @@
 import qbClient from '../services/qbittorrent.js';
 import { getDb } from '../database/connection.js';
 import writeQueue from '../database/write-queue.js';
+import { createLogger } from '../lib/logger.js';
+
+const log = createLogger('websocket');
 
 /**
  * WebSocket 服务
@@ -20,15 +23,15 @@ class WebSocketService {
   init(app) {
     app.ws('/ws', (ws, req) => {
       this.clients.add(ws);
-      console.log('[ws] Client connected, total:', this.clients.size);
+      log('Client connected, total:', this.clients.size);
 
       ws.on('close', () => {
         this.clients.delete(ws);
-        console.log('[ws] Client disconnected, total:', this.clients.size);
+        log('Client disconnected, total:', this.clients.size);
       });
 
       ws.on('error', (err) => {
-        console.error('[ws] Client error:', err.message);
+        log('Client error:', err.message);
         this.clients.delete(ws);
       });
 
@@ -49,7 +52,7 @@ class WebSocketService {
       try {
         ws.send(payload);
       } catch (err) {
-        console.error('[ws] Broadcast error:', err.message);
+        log('Broadcast error:', err.message);
         this.clients.delete(ws);
       }
     }
@@ -62,7 +65,7 @@ class WebSocketService {
     try {
       ws.send(JSON.stringify(data));
     } catch (err) {
-      console.error('[ws] Send error:', err.message);
+      log('Send error:', err.message);
       this.clients.delete(ws);
     }
   }

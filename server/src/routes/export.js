@@ -9,6 +9,9 @@ import { fileURLToPath } from 'url';
 const require = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const router = Router();
+import { createLogger } from '../lib/logger.js';
+
+const log = createLogger('routes-export');
 
 /**
  * 导出整个数据库
@@ -54,7 +57,7 @@ router.get('/', (req, res) => {
       fs.unlink(exportPath, () => {});
     });
   } catch (err) {
-    console.error('[export] Error:', err.message);
+    log('Export error:', err.message);
     if (fs.existsSync(exportPath)) fs.unlinkSync(exportPath);
     res.status(500).json({ error: 'Export failed', message: err.message });
   }
@@ -133,7 +136,7 @@ router.post('/', (req, res) => {
 
       res.json({ success: true, mode });
     } catch (err) {
-      console.error('[import] Error:', err.message);
+      log('Import error:', err.message);
       if (importDb) { try { importDb.close(); } catch {} }
       try { if (fs.existsSync(importPath)) fs.unlinkSync(importPath); } catch {}
       res.status(500).json({ error: 'Import failed', message: err.message });
