@@ -151,8 +151,9 @@ router.get('/:id/screenshots/:screenshotId', (req, res) => {
 
   const data = size === 'original' ? screenshot.image : (screenshot.thumbnail || screenshot.image);
   // 缩略图固定为 JPEG（sharp 生成），原图按存储格式
+  const formatMap = { png: 'image/png', gif: 'image/gif', jpeg: 'image/jpeg' };
   const contentType = size === 'original'
-    ? (screenshot.format === 'png' ? 'image/png' : 'image/jpeg')
+    ? (formatMap[screenshot.format] || 'image/jpeg')
     : 'image/jpeg';
 
   res.set('Content-Type', contentType);
@@ -424,7 +425,7 @@ router.delete('/:id/purge', async (req, res) => {
 /**
  * 添加截图
  * POST /api/resources/:id/screenshots
- * Content-Type: image/png 或 image/jpeg (原始二进制)
+ * Content-Type: image/png, image/jpeg 或 image/gif (原始二进制)
  */
 router.post('/:id/screenshots', async (req, res) => {
   const { id } = req.params;
@@ -458,7 +459,14 @@ router.post('/:id/screenshots', async (req, res) => {
           .jpeg({ quality: 80 })
           .toBuffer();
 
-        format = metadata.format === 'png' ? 'png' : 'jpeg';
+        // gif 格式原样保留，sharp 只取首帧生成缩略图
+        if (metadata.format === 'png') {
+          format = 'png';
+        } else if (metadata.format === 'gif') {
+          format = 'gif';
+        } else {
+          format = 'jpeg';
+        }
       } catch (err) {
         log('Thumbnail generation error:', err.message);
         // 如果 sharp 失败，用原图当缩略图
