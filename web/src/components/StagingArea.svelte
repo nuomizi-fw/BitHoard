@@ -25,11 +25,14 @@
 
     async function confirmItem(res, idx) {
         try {
+            // 暂存区单项确认：有 contextText 时不传 suggestedTitle，
+            // 让服务端 extractCandidateTitle 从上下文中按 hash 定位逐条解析标题
+            const hasContext = !!(res.context_text && res.context_text.trim());
             const result = await api.createResources({
                 links: [{ uri: res.magnet_uri, type: "magnet" }],
                 sourceApp: res.source_app || "暂存录入",
                 contextText: res.context_text || "",
-                suggestedTitle: res.suggested_title || res.title || undefined,
+                suggestedTitle: hasContext ? undefined : (res.suggested_title || res.title || undefined),
             });
             // 自动激活 + 上传截图
             for (const r of result.results) {
@@ -59,11 +62,14 @@
         for (let i = items.length - 1; i >= 0; i--) {
             try {
                 const res = items[i];
+                // 暂存区单项确认：有 contextText 时不传 suggestedTitle，
+                // 让服务端 extractCandidateTitle 从上下文中按 hash 定位逐条解析标题
+                const hasContext = !!(res.context_text && res.context_text.trim());
                 const result = await api.createResources({
                     links: [{ uri: res.magnet_uri, type: "magnet" }],
                     sourceApp: res.source_app || "暂存录入",
                     contextText: res.context_text || "",
-                    suggestedTitle: res.suggested_title || res.title || undefined,
+                    suggestedTitle: hasContext ? undefined : (res.suggested_title || res.title || undefined),
                 });
                 for (const r of result.results) {
                     if (r.created) {

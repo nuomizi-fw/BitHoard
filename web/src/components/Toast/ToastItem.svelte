@@ -98,21 +98,27 @@
     async function handleSave() {
         saving = true;
         try {
+            const isMultiLink = (toast.links || []).length > 1;
+            // 多链接时不传 suggestedTitle，让服务端 extractCandidateTitle 逐条解析上下文标题
             const result = await api.createResources({
                 links: toast.links,
                 sourceApp,
                 contextText: toast.contextText || "",
-                suggestedTitle: title || undefined,
+                suggestedTitle: isMultiLink ? undefined : (title || undefined),
             });
 
             // 更新标题和描述，同时上传截图
             for (const r of result.results) {
                 if (r.created) {
-                    await api.updateResource(r.id, {
-                        title: title || undefined,
+                    // 多链接时保留服务端逐条解析的标题，仅更新描述和状态
+                    const updatePayload = {
                         description: description || undefined,
                         status: "active",
-                    });
+                    };
+                    if (!isMultiLink && title) {
+                        updatePayload.title = title;
+                    }
+                    await api.updateResource(r.id, updatePayload);
                     // 上传所有粘贴的截图
                     for (const shot of screenshots) {
                         try {
@@ -137,20 +143,26 @@
     async function handleDownload() {
         saving = true;
         try {
+            const isMultiLink = (toast.links || []).length > 1;
+            // 多链接时不传 suggestedTitle，让服务端 extractCandidateTitle 逐条解析上下文标题
             const result = await api.createResources({
                 links: toast.links,
                 sourceApp,
                 contextText: toast.contextText || "",
-                suggestedTitle: title || undefined,
+                suggestedTitle: isMultiLink ? undefined : (title || undefined),
             });
 
             for (const r of result.results) {
                 if (r.created) {
-                    await api.updateResource(r.id, {
-                        title: title || undefined,
+                    // 多链接时保留服务端逐条解析的标题，仅更新描述和状态
+                    const updatePayload = {
                         description: description || undefined,
                         status: "active",
-                    });
+                    };
+                    if (!isMultiLink && title) {
+                        updatePayload.title = title;
+                    }
+                    await api.updateResource(r.id, updatePayload);
                     // 上传所有粘贴的截图
                     for (const shot of screenshots) {
                         try {
@@ -186,7 +198,9 @@
     async function handleStaging() {
         saving = true;
         try {
+            const isMultiLink = (toast.links || []).length > 1;
             // 直接添加到暂存区，不创建资源（字段统一使用下划线风格）
+            // 多链接时不预设 suggested_title，让服务端逐条从 context_text 解析
             stagingResources.update(items => [
                 ...items,
                 ...(toast.links || []).map(link => ({
@@ -194,7 +208,7 @@
                     title: title || "",
                     source_app: sourceApp,
                     context_text: toast.contextText || "",
-                    suggested_title: title || "",
+                    suggested_title: isMultiLink ? "" : (title || ""),
                     screenshots: screenshots.map(s => s.dataUrl),
                 }))
             ]);
