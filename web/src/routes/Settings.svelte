@@ -128,7 +128,7 @@
                 const fileInput = document.getElementById('import-file-input');
                 if (fileInput) fileInput.value = '';
             } else {
-                showToast({ type: "error", message: "导入失败: " + (result.error || '未知错误') });
+                showToast({ type: "error", message: "导入失败: " + (result.message || result.error || '未知错误') });
             }
         } catch (err) {
             showToast({ type: "error", message: "导入失败: " + err.message });

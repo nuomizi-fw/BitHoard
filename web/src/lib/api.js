@@ -285,7 +285,13 @@ export const api = {
       headers: { 'Authorization': `Bearer ${getToken()}` },
       body: file,
     });
-    return res.json();
+    const text = await res.text();
+    try {
+      return JSON.parse(text);
+    } catch {
+      const preview = text.slice(0, 200);
+      throw new Error(`服务器返回了非 JSON 响应 (HTTP ${res.status}): ${preview}`);
+    }
   },
 
   // Search
