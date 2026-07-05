@@ -3,7 +3,7 @@ import qbClient from '../services/qbittorrent.js';
 import torrentParser from '../services/torrent-parser.js';
 import { getDb } from '../database/connection.js';
 import { v4 as uuidv4 } from 'uuid';
-import writeQueue from '../database/write-queue.js';
+import { dbWrite } from '../database/helpers.js';
 
 const router = Router();
 
@@ -102,26 +102,20 @@ router.post('/fetch-metadata/:resourceId', async (req, res) => {
     // 获取文件列表并缓存
     const files = await qbClient.getTorrentFiles(download.qb_task_hash);
     if (files && files.length > 0) {
-      await writeQueue.enqueue(() => {
-        const db2 = getDb();
-        db2.prepare('DELETE FROM file_cache WHERE resource_id = ?').run(resourceId);
-        const insert = db2.prepare(`
-          INSERT INTO file_cache (id, resource_id, file_path, file_size, file_index)
-          VALUES (?, ?, ?, ?, ?)
-        `);
-        files.forEach((f, i) => {
-          insert.run(uuidv4(), resourceId, f.name, f.size, i);
-        });
-      });
+      await dbWrite('DELETE FROM file_cache WHERE resource_id = ?', resourceId);
+      for (const [i, f] of files.entries()) {
+        await dbWrite(
+          'INSERT INTO file_cache (id, resource_id, file_path, file_size, file_index) VALUES (?, ?, ?, ?, ?)',
+          uuidv4(), resourceId, f.name, f.size, i
+        );
+      }
     }
 
     // 更新下载记录
-    await writeQueue.enqueue(() => {
-      db.prepare(`
-        UPDATE download SET total_size = ?, updated_at = datetime('now')
-        WHERE resource_id = ?
-      `).run(props.total_size || 0, resourceId);
-    });
+    await dbWrite(
+      "UPDATE download SET total_size = ?, updated_at = datetime('now') WHERE resource_id = ?",
+      props.total_size || 0, resourceId
+    );
 
     res.json({
       name: props.name || '',

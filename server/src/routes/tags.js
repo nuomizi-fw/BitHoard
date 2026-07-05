@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { getDb } from '../database/connection.js';
-import writeQueue from '../database/write-queue.js';
+import { dbWrite, dbPatch, dbHardDelete } from '../database/helpers.js';
 
 const router = Router();
 
@@ -34,9 +34,7 @@ router.post('/', async (req, res) => {
   if (existing) return res.json(existing);
 
   const id = uuidv4();
-  await writeQueue.enqueue(() => {
-    db.prepare('INSERT INTO tag (id, name, color) VALUES (?, ?, ?)').run(id, name, color || '#6366f1');
-  });
+  await dbWrite('INSERT INTO tag (id, name, color) VALUES (?, ?, ?)', id, name, color || '#6366f1');
 
   res.status(201).json(db.prepare('SELECT * FROM tag WHERE id = ?').get(id));
 });
@@ -46,25 +44,9 @@ router.post('/', async (req, res) => {
  * PATCH /api/tags/:id
  */
 router.patch('/:id', async (req, res) => {
-  const { id } = req.params;
-  const { name, color } = req.body;
-
-  const db = getDb();
-  const tag = db.prepare('SELECT * FROM tag WHERE id = ?').get(id);
-  if (!tag) return res.status(404).json({ error: 'Tag not found' });
-
-  const setClauses = [];
-  const updates = { id };
-  if (name !== undefined) { setClauses.push('name = @name'); updates.name = name; }
-  if (color !== undefined) { setClauses.push('color = @color'); updates.color = color; }
-
-  if (setClauses.length > 0) {
-    await writeQueue.enqueue(() => {
-      db.prepare(`UPDATE tag SET ${setClauses.join(', ')} WHERE id = @id`).run(updates);
-    });
-  }
-
-  res.json(db.prepare('SELECT * FROM tag WHERE id = ?').get(id));
+  const { notFound, record } = await dbPatch('tag', 'id', req.params.id, req.body, ['name', 'color']);
+  if (notFound) return res.status(404).json({ error: 'Tag not found' });
+  res.json(record);
 });
 
 /**
@@ -72,10 +54,7 @@ router.patch('/:id', async (req, res) => {
  * DELETE /api/tags/:id
  */
 router.delete('/:id', async (req, res) => {
-  await writeQueue.enqueue(() => {
-    const db = getDb();
-    db.prepare('DELETE FROM tag WHERE id = ?').run(req.params.id);
-  });
+  await dbHardDelete('tag', 'id', req.params.id);
   res.json({ success: true });
 });
 
@@ -84,14 +63,7 @@ router.delete('/:id', async (req, res) => {
  * POST /api/resources/:resourceId/tags
  */
 router.post('/resources/:resourceId/tags', async (req, res) => {
-  const { resourceId } = req.params;
-  const { tag_id } = req.body;
-
-  const db = getDb();
-  await writeQueue.enqueue(() => {
-    db.prepare('INSERT OR IGNORE INTO resource_tag (resource_id, tag_id) VALUES (?, ?)').run(resourceId, tag_id);
-  });
-
+  await dbWrite('INSERT OR IGNORE INTO resource_tag (resource_id, tag_id) VALUES (?, ?)', req.params.resourceId, req.body.tag_id);
   res.json({ success: true });
 });
 
@@ -100,10 +72,7 @@ router.post('/resources/:resourceId/tags', async (req, res) => {
  * DELETE /api/resources/:resourceId/tags/:tagId
  */
 router.delete('/resources/:resourceId/tags/:tagId', async (req, res) => {
-  await writeQueue.enqueue(() => {
-    const db = getDb();
-    db.prepare('DELETE FROM resource_tag WHERE resource_id = ? AND tag_id = ?').run(req.params.resourceId, req.params.tagId);
-  });
+  await dbWrite('DELETE FROM resource_tag WHERE resource_id = ? AND tag_id = ?', req.params.resourceId, req.params.tagId);
   res.json({ success: true });
 });
 

@@ -107,9 +107,8 @@ router.put('/config', (req, res) => {
   }
   if (ipWhitelist !== undefined) {
     config.ipWhitelist = ipWhitelist.split(',').map(s => s.trim()).filter(Boolean);
-    // 确保本地地址始终在列表中
-    const localAddrs = ['127.0.0.1', '::1', 'localhost'];
-    for (const addr of localAddrs) {
+    // 确保本地地址始终在列表中（引用 config.localAddresses 常量）
+    for (const addr of config.localAddresses) {
       if (!config.ipWhitelist.includes(addr)) {
         config.ipWhitelist.push(addr);
       }

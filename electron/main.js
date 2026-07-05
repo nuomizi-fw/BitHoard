@@ -5,6 +5,11 @@ const { createTray, destroyTray } = require('./tray');
 const { registerShortcuts, unregisterAll } = require('./shortcuts');
 const { initClipboardMonitor, stopClipboardMonitor } = require('./clipboard-monitor');
 
+// ── 拆分后的 IPC 处理器 ──
+const { registerClipboardIpc } = require('./ipc/clipboard');
+const { registerFileDroppedIpc } = require('./ipc/file-dropped');
+const { registerAppInfoIpc } = require('./ipc/app-info');
+
 let mainWindow = null;
 let tray = null;
 let serverInstance = null;  // { app, server } 来自 server 模块
@@ -28,57 +33,10 @@ async function startServer() {
   return serverModule.startServer();
 }
 
-// IPC 处理器
-ipcMain.handle('clipboard:detected', async (event, data) => {
-  if (mainWindow) {
-    mainWindow.webContents.send('toast:show', data);
-  }
-});
-
-ipcMain.handle('get-app-version', () => app.getVersion());
-
-// 剪贴板读权限（快捷键手动捕获时使用）
-ipcMain.handle('clipboard:read', () => {
-  return clipboard.readText() || '';
-});
-
-// 读取剪贴板图像（返回 PNG data URL 或 null）
-ipcMain.handle('clipboard:read-image', () => {
-  const { nativeImage } = require('electron');
-  const img = clipboard.readImage();
-  if (img.isEmpty()) return null;
-  return img.toDataURL();
-});
-
-// 拖拽文件处理
-ipcMain.handle('file:dropped', async (event, filePaths) => {
-  const fs = require('fs');
-  const path = require('path');
-  const results = [];
-
-  for (const filePath of filePaths) {
-    const ext = path.extname(filePath).toLowerCase();
-    if (ext === '.torrent') {
-      // 读取 .torrent 文件为 base64 发送给渲染进程
-      const data = fs.readFileSync(filePath);
-      results.push({ type: 'torrent', name: path.basename(filePath), data: data.toString('base64') });
-    } else {
-      // 尝试读取文本内容
-      try {
-        const text = fs.readFileSync(filePath, 'utf-8');
-        results.push({ type: 'text', name: path.basename(filePath), data: text });
-      } catch {
-        results.push({ type: 'unknown', name: path.basename(filePath) });
-      }
-    }
-  }
-
-  if (mainWindow && results.length > 0) {
-    mainWindow.webContents.send('file:dropped', results);
-  }
-
-  return results;
-});
+// ── 注册 IPC 处理器 ──
+registerClipboardIpc();
+registerFileDroppedIpc();
+registerAppInfoIpc();
 
 app.whenReady().then(async () => {
   // ── 生产模式：嵌入启动后端服务器 ──

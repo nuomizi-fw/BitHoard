@@ -19,7 +19,13 @@ export default {
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '30d',
 
   // IP 白名单 (逗号分隔, 空=仅本地)
-  ipWhitelist: (process.env.IP_WHITELIST || '127.0.0.1,::1,localhost').split(','),
+  ipWhitelist: (process.env.IP_WHITELIST || '').split(',').filter(Boolean),
+
+  // 本地回环地址 (始终放行，不依赖白名单配置)
+  localAddresses: ['127.0.0.1', '::1', 'localhost'],
+
+  // IPv4-mapped IPv6 本地前缀
+  localIPv6Prefixes: ['::ffff:127.0.0.1', '::ffff:127.'],
 
   // 管理员密码 (单用户)
   adminPassword: process.env.ADMIN_PASSWORD || 'admin',

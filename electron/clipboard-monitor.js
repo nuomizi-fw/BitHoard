@@ -1,16 +1,13 @@
 const { clipboard, nativeImage } = require('electron');
-const { execSync } = require('child_process');
+const { exec } = require('child_process');
 
-// 链接匹配正则
+// 链接匹配正则（与 server/src/lib/constants.js BTIH_PATTERNS 保持同步）
 const PATTERNS = {
   magnet: /magnet:\?xt=urn:btih:[a-zA-Z0-9]{32,}/gi,
   torrentUrl: /https?:\/\/[^\s"'<>]+\.torrent/gi,
   ed2k: /ed2k:\/\/\|file\|[^|]+\|[a-fA-F0-9]{32}\|/gi,
-  // 纯 BTIH hash（40位十六进制），识别后自动构造 magnet URI
   btihHash: /\b([a-fA-F0-9]{40})\b/g,
-  // Base32 编码的 BTIH hash（32位，字符集 A-Z2-7）
-  btihBase32: /\b([A-Z2-7a-z2-7]{32})\b/g,
-  // 截断磁链：hash&dn=xxx&xl=xxx 格式（缺少 magnet:?xt=urn:btih: 前缀）
+  btihBase32: /\b([A-Z2-7a-z2-7]{32})\b/gi,
   truncatedMagnet: /\b([A-Z2-7a-z2-7]{32}|[a-fA-F0-9]{40})(?:&[a-z]+=[^&\s<>"]+)+\b/gi,
 };
 
@@ -20,40 +17,55 @@ let monitorInterval = null;
 let mainWindow = null;
 let batchBuffer = [];
 let batchTimer = null;
+let foregroundCache = { name: 'unknown', ts: 0 };
 const BATCH_WINDOW_MS = 500;
+const FOREGROUND_CACHE_MS = 3000; // 前台窗口缓存 3 秒
 
 /**
- * 获取当前前台窗口进程名，用于判断来源应用
+ * 获取当前前台窗口进程名，用于判断来源应用（异步，带缓存）
  */
 function getForegroundWindowProcess() {
-  try {
-    // 使用 PowerShell 获取前台窗口进程名
-    const script = `
-      Add-Type @"
-        using System;
-        using System.Runtime.InteropServices;
-        using System.Diagnostics;
-        using System.Text;
-        public class WinAPI {
-          [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
-          [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
-          [DllImport("user32.dll")] public static extern int GetWindowText(IntPtr hWnd, StringBuilder text, int count);
-        }
+  return new Promise((resolve) => {
+    // 缓存命中，直接返回
+    if (Date.now() - foregroundCache.ts < FOREGROUND_CACHE_MS) {
+      resolve(foregroundCache.name);
+      return;
+    }
+
+    try {
+      const script = `
+        Add-Type @"
+          using System;
+          using System.Runtime.InteropServices;
+          using System.Diagnostics;
+          using System.Text;
+          public class WinAPI {
+            [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+            [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+          }
 "@
-      $hwnd = [WinAPI]::GetForegroundWindow()
-      $pid = 0
-      [WinAPI]::GetWindowThreadProcessId($hwnd, [ref]$pid)
-      try { (Get-Process -Id $pid).ProcessName } catch { "unknown" }
-    `;
-    const result = execSync(`powershell -NoProfile -Command "${script.replace(/"/g, '\\"').replace(/\n/g, ' ')}"`, {
-      encoding: 'utf-8',
-      timeout: 1000,
-      windowsHide: true,
-    });
-    return result.trim() || 'unknown';
-  } catch {
-    return 'unknown';
-  }
+        $hwnd = [WinAPI]::GetForegroundWindow()
+        $pid = 0
+        [WinAPI]::GetWindowThreadProcessId($hwnd, [ref]$pid)
+        try { (Get-Process -Id $pid).ProcessName } catch { "unknown" }
+      `;
+      exec(`powershell -NoProfile -Command "${script.replace(/"/g, '\\"').replace(/\n/g, ' ')}"`, {
+        encoding: 'utf-8',
+        timeout: 1000,
+        windowsHide: true,
+      }, (err, stdout) => {
+        if (err) {
+          resolve(foregroundCache.name);
+          return;
+        }
+        const name = (stdout || '').trim() || 'unknown';
+        foregroundCache = { name, ts: Date.now() };
+        resolve(name);
+      });
+    } catch {
+      resolve(foregroundCache.name);
+    }
+  });
 }
 
 /**
@@ -141,14 +153,14 @@ function extractLinks(text) {
 }
 
 /**
- * 处理检测到的链接
+ * 处理检测到的链接（异步获取来源应用）
  * @param {Array} links - 提取到的链接列表
  * @param {string} contextText - 完整的剪贴板文本，用于服务端上下文解析
  */
-function handleLinks(links, contextText) {
+async function handleLinks(links, contextText) {
   if (links.length === 0) return;
 
-  const sourceProcess = getForegroundWindowProcess();
+  const sourceProcess = await getForegroundWindowProcess();
   const sourceApp = getFriendlyAppName(sourceProcess);
 
   const payload = {

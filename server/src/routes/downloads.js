@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { getDb } from '../database/connection.js';
 import writeQueue from '../database/write-queue.js';
+import { dbWrite } from '../database/helpers.js';
 import qbClient from '../services/qbittorrent.js';
 import torrentParser from '../services/torrent-parser.js';
 import diskChecker from '../services/disk-check.js';
@@ -83,20 +84,17 @@ router.post('/', async (req, res) => {
 
   // 创建下载记录
   const downloadId = uuidv4();
-  await writeQueue.enqueue(() => {
-    db.prepare(`
-      INSERT INTO download (id, resource_id, download_path, download_status, started_at)
-      VALUES (?, ?, ?, ?, datetime('now'))
-    `).run(downloadId, resource_id, download_path || '', start_paused ? 'paused' : 'downloading');
-  });
+  await dbWrite(
+    `INSERT INTO download (id, resource_id, download_path, download_status, started_at)
+     VALUES (?, ?, ?, ?, datetime('now'))`,
+    downloadId, resource_id, download_path || '', start_paused ? 'paused' : 'downloading'
+  );
 
   // 记录日志
-  await writeQueue.enqueue(() => {
-    db.prepare(`
-      INSERT INTO history (id, resource_id, action, detail)
-      VALUES (?, ?, 'download_started', ?)
-    `).run(uuidv4(), resource_id, JSON.stringify({ download_id: downloadId, path: download_path }));
-  });
+  await dbWrite(
+    `INSERT INTO history (id, resource_id, action, detail) VALUES (?, ?, 'download_started', ?)`,
+    uuidv4(), resource_id, JSON.stringify({ download_id: downloadId, path: download_path })
+  );
 
   const download = db.prepare('SELECT * FROM download WHERE id = ?').get(downloadId);
   res.status(201).json(download);
@@ -197,16 +195,12 @@ router.delete('/:id', async (req, res) => {
     }
   }
 
-  await writeQueue.enqueue(() => {
-    db.prepare('DELETE FROM download WHERE id = ?').run(id);
-  });
+  await dbWrite('DELETE FROM download WHERE id = ?', id);
 
-  await writeQueue.enqueue(() => {
-    db.prepare(`
-      INSERT INTO history (id, resource_id, action, detail)
-      VALUES (?, ?, 'download_deleted', ?)
-    `).run(uuidv4(), download.resource_id, JSON.stringify({ delete_files }));
-  });
+  await dbWrite(
+    `INSERT INTO history (id, resource_id, action, detail) VALUES (?, ?, 'download_deleted', ?)`,
+    uuidv4(), download.resource_id, JSON.stringify({ delete_files })
+  );
 
   res.json({ success: true });
 });

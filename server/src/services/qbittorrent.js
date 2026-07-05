@@ -96,6 +96,23 @@ class QBittorrentClient {
   }
 
   /**
+   * 发送 API 请求并解析 JSON（try/catch 收敛）
+   * @param {string} endpoint
+   * @param {object} [options]
+   * @returns {Promise<any>}
+   */
+  async requestJson(endpoint, options = {}) {
+    try {
+      const res = await this.request(endpoint, options);
+      if (!res.ok) return null;
+      return res.json();
+    } catch (err) {
+      console.error(`[qbittorrent] ${endpoint} error:`, err.message);
+      return null;
+    }
+  }
+
+  /**
    * 添加磁链下载任务
    * @param {string} uri - 磁链或种子 URL
    * @param {string} savePath - 保存路径
@@ -145,9 +162,7 @@ class QBittorrentClient {
    * 获取所有任务列表
    */
   async getTorrents() {
-    const res = await this.request('/torrents/info');
-    if (!res.ok) return [];
-    return res.json();
+    return this.requestJson('/torrents/info') || [];
   }
 
   /**
@@ -155,18 +170,14 @@ class QBittorrentClient {
    * @param {string} hash - 任务 hash
    */
   async getTorrentFiles(hash) {
-    const res = await this.request(`/torrents/files?hash=${hash}`);
-    if (!res.ok) return [];
-    return res.json();
+    return this.requestJson(`/torrents/files?hash=${hash}`) || [];
   }
 
   /**
    * 获取任务属性（含元数据）
    */
   async getTorrentProperties(hash) {
-    const res = await this.request(`/torrents/properties?hash=${hash}`);
-    if (!res.ok) return null;
-    return res.json();
+    return this.requestJson(`/torrents/properties?hash=${hash}`);
   }
 
   /**
@@ -211,18 +222,14 @@ class QBittorrentClient {
    * 获取全局传输信息 (速度/进度)
    */
   async getTransferInfo() {
-    const res = await this.request('/transfer/info');
-    if (!res.ok) return null;
-    return res.json();
+    return this.requestJson('/transfer/info');
   }
 
   /**
    * 获取主数据 (用于轮询，返回所有任务简要信息)
    */
   async getSyncMainData(rid = 0) {
-    const res = await this.request(`/sync/maindata?rid=${rid}`);
-    if (!res.ok) return null;
-    return res.json();
+    return this.requestJson(`/sync/maindata?rid=${rid}`);
   }
 
   /**

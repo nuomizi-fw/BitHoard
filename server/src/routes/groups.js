@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { getDb } from '../database/connection.js';
-import writeQueue from '../database/write-queue.js';
+import { dbWrite, dbPatch, dbHardDelete } from '../database/helpers.js';
 
 const router = Router();
 
@@ -18,7 +18,6 @@ router.get('/', (req, res) => {
     GROUP BY g.id
     ORDER BY g.name
   `).all();
-  // 去除 cover BLOB 减少传输
   res.json(groups.map(g => ({ ...g, cover: g.cover ? true : false })));
 });
 
@@ -54,9 +53,7 @@ router.post('/', async (req, res) => {
   if (existing) return res.json({ ...existing, cover: !!existing.cover });
 
   const id = uuidv4();
-  await writeQueue.enqueue(() => {
-    db.prepare('INSERT INTO "group" (id, name, description) VALUES (?, ?, ?)').run(id, name, description || '');
-  });
+  await dbWrite('INSERT INTO "group" (id, name, description) VALUES (?, ?, ?)', id, name, description || '');
 
   res.status(201).json(db.prepare('SELECT * FROM "group" WHERE id = ?').get(id));
 });
@@ -66,26 +63,9 @@ router.post('/', async (req, res) => {
  * PATCH /api/groups/:id
  */
 router.patch('/:id', async (req, res) => {
-  const { id } = req.params;
-  const { name, description } = req.body;
-
-  const db = getDb();
-  const group = db.prepare('SELECT * FROM "group" WHERE id = ?').get(id);
-  if (!group) return res.status(404).json({ error: 'Group not found' });
-
-  const setClauses = [];
-  const updates = { id };
-
-  if (name !== undefined) { setClauses.push('name = @name'); updates.name = name; }
-  if (description !== undefined) { setClauses.push('description = @description'); updates.description = description; }
-
-  if (setClauses.length > 0) {
-    await writeQueue.enqueue(() => {
-      db.prepare(`UPDATE "group" SET ${setClauses.join(', ')} WHERE id = @id`).run(updates);
-    });
-  }
-
-  res.json(db.prepare('SELECT * FROM "group" WHERE id = ?').get(id));
+  const { notFound, record } = await dbPatch('"group"', 'id', req.params.id, req.body, ['name', 'description']);
+  if (notFound) return res.status(404).json({ error: 'Group not found' });
+  res.json(record);
 });
 
 /**
@@ -93,10 +73,7 @@ router.patch('/:id', async (req, res) => {
  * DELETE /api/groups/:id
  */
 router.delete('/:id', async (req, res) => {
-  await writeQueue.enqueue(() => {
-    const db = getDb();
-    db.prepare('DELETE FROM "group" WHERE id = ?').run(req.params.id);
-  });
+  await dbHardDelete('"group"', 'id', req.params.id);
   res.json({ success: true });
 });
 
@@ -105,10 +82,7 @@ router.delete('/:id', async (req, res) => {
  * POST /api/groups/:groupId/resources/:resourceId
  */
 router.post('/:groupId/resources/:resourceId', async (req, res) => {
-  await writeQueue.enqueue(() => {
-    const db = getDb();
-    db.prepare('INSERT OR IGNORE INTO resource_group (resource_id, group_id) VALUES (?, ?)').run(req.params.resourceId, req.params.groupId);
-  });
+  await dbWrite('INSERT OR IGNORE INTO resource_group (resource_id, group_id) VALUES (?, ?)', req.params.resourceId, req.params.groupId);
   res.json({ success: true });
 });
 
@@ -117,10 +91,7 @@ router.post('/:groupId/resources/:resourceId', async (req, res) => {
  * DELETE /api/groups/:groupId/resources/:resourceId
  */
 router.delete('/:groupId/resources/:resourceId', async (req, res) => {
-  await writeQueue.enqueue(() => {
-    const db = getDb();
-    db.prepare('DELETE FROM resource_group WHERE resource_id = ? AND group_id = ?').run(req.params.resourceId, req.params.groupId);
-  });
+  await dbWrite('DELETE FROM resource_group WHERE resource_id = ? AND group_id = ?', req.params.resourceId, req.params.groupId);
   res.json({ success: true });
 });
 

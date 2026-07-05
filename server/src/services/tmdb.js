@@ -15,77 +15,49 @@ class TMDBService {
   }
 
   /**
+   * 通用 TMDB API 请求（try/catch 收敛，消除重复）
+   */
+  async tmdbRequest(path) {
+    if (!this.enabled) return null;
+    try {
+      const url = `${this.baseUrl}${path}${path.includes('?') ? '&' : '?'}api_key=${this.apiKey}&language=${this.language}`;
+      const res = await fetch(url);
+      if (!res.ok) return null;
+      return res.json();
+    } catch (err) {
+      console.error(`[tmdb] ${path} error:`, err.message);
+      return null;
+    }
+  }
+
+  /**
    * 按标题搜索影视信息 (仅返回首个结果)
    */
   async search(title) {
-    if (!this.enabled) return null;
-
-    try {
-      const res = await fetch(
-        `${this.baseUrl}/search/multi?api_key=${this.apiKey}&language=${this.language}&query=${encodeURIComponent(title)}&page=1`
-      );
-      if (!res.ok) return null;
-      const data = await res.json();
-      return data.results?.[0] || null;
-    } catch (err) {
-      console.error('[tmdb] Search error:', err.message);
-      return null;
-    }
+    const data = await this.tmdbRequest(`/search/multi?query=${encodeURIComponent(title)}&page=1`);
+    return data?.results?.[0] || null;
   }
 
   /**
    * 搜索影视信息 (返回全部结果列表)
    */
   async searchMulti(title) {
-    if (!this.enabled) return null;
-
-    try {
-      const res = await fetch(
-        `${this.baseUrl}/search/multi?api_key=${this.apiKey}&language=${this.language}&query=${encodeURIComponent(title)}&page=1`
-      );
-      if (!res.ok) return null;
-      const data = await res.json();
-      return { results: data.results || [], total: data.total_results || 0 };
-    } catch (err) {
-      console.error('[tmdb] Search error:', err.message);
-      return null;
-    }
+    const data = await this.tmdbRequest(`/search/multi?query=${encodeURIComponent(title)}&page=1`);
+    return data ? { results: data.results || [], total: data.total_results || 0 } : null;
   }
 
   /**
    * 获取电影详情
    */
   async getMovie(movieId) {
-    if (!this.enabled) return null;
-
-    try {
-      const res = await fetch(
-        `${this.baseUrl}/movie/${movieId}?api_key=${this.apiKey}&language=${this.language}`
-      );
-      if (!res.ok) return null;
-      return res.json();
-    } catch (err) {
-      console.error('[tmdb] Movie error:', err.message);
-      return null;
-    }
+    return this.tmdbRequest(`/movie/${movieId}`);
   }
 
   /**
    * 获取电视剧详情
    */
   async getTV(tvId) {
-    if (!this.enabled) return null;
-
-    try {
-      const res = await fetch(
-        `${this.baseUrl}/tv/${tvId}?api_key=${this.apiKey}&language=${this.language}`
-      );
-      if (!res.ok) return null;
-      return res.json();
-    } catch (err) {
-      console.error('[tmdb] TV error:', err.message);
-      return null;
-    }
+    return this.tmdbRequest(`/tv/${tvId}`);
   }
 
   /**

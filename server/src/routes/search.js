@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { getDb } from '../database/connection.js';
+import { buildResourceWhereClause, buildOrderClause, SCREENSHOT_SUBQUERY } from '../lib/query-builder.js';
 
 const router = Router();
 
@@ -19,31 +20,18 @@ router.get('/', (req, res) => {
   const results = { query: q, resources: null, files: null };
 
   if (type === 'resource' || type === 'all') {
-    const countSql = `
-      SELECT COUNT(*) as total FROM resource r
-      WHERE r.is_deleted = 0 AND (
-        r.title LIKE @q OR r.description LIKE @q OR r.magnet_uri LIKE @q OR r.review LIKE @q
-      )
-    `;
-    const { total } = db.prepare(countSql).get({ q: `%${q}%` });
-
-    const sql = `
-      SELECT r.*, (SELECT COUNT(*) FROM screenshot WHERE resource_id = r.id) as screenshot_count, (SELECT id FROM screenshot WHERE resource_id = r.id ORDER BY "order" LIMIT 1) as first_screenshot_id
-      FROM resource r
-      WHERE r.is_deleted = 0 AND (
-        r.title LIKE @q OR r.description LIKE @q OR r.magnet_uri LIKE @q OR r.review LIKE @q
-      )
+    const { whereClause, params } = buildResourceWhereClause({ search: q, is_deleted: 0 });
+    const { total } = db.prepare(`SELECT COUNT(*) as total FROM resource r ${whereClause}`).get(params);
+    const items = db.prepare(`
+      SELECT r.*, ${SCREENSHOT_SUBQUERY}
+      FROM resource r ${whereClause}
       ORDER BY r.updated_at DESC
       LIMIT @limit OFFSET @offset
-    `;
-    results.resources = {
-      total,
-      items: db.prepare(sql).all({ q: `%${q}%`, limit: parseInt(limit), offset }),
-    };
+    `).all({ ...params, limit: parseInt(limit), offset });
+    results.resources = { total, items };
   }
 
   if (type === 'file' || type === 'all') {
-    // 文件名反向搜索
     const fileCountSql = `
       SELECT COUNT(DISTINCT fc.resource_id) as total
       FROM file_cache fc
@@ -82,61 +70,41 @@ router.post('/advanced', (req, res) => {
     page = 1, limit = 50,
   } = req.body;
 
-  const offset = (parseInt(page) - 1) * parseInt(limit);
-  const conditions = ['r.is_deleted = 0'];
-  const params = {};
+  const { whereClause, params } = buildResourceWhereClause({
+    search: q, status, category, rating_min, rating_max,
+    source_app, has_download, is_deleted: 0,
+  });
+  const { safeSort, safeOrder } = buildOrderClause(sort, order);
 
-  if (q) {
-    conditions.push('(r.title LIKE @q OR r.description LIKE @q OR r.magnet_uri LIKE @q)');
-    params.q = `%${q}%`;
-  }
-  if (status) { conditions.push('r.status = @status'); params.status = status; }
-  if (category) { conditions.push('r.category = @category'); params.category = category; }
-  if (rating_min !== undefined) { conditions.push('r.rating >= @rating_min'); params.rating_min = rating_min; }
-  if (rating_max !== undefined) { conditions.push('r.rating <= @rating_max'); params.rating_max = rating_max; }
-  if (source_app) { conditions.push('r.source_app = @source_app'); params.source_app = source_app; }
+  const offset = (parseInt(page) - 1) * parseInt(limit);
+
+  // tags/groups 数组参数需要手动构建（better-sqlite3 命名参数不支持数组展开）
+  const conditions = [whereClause.replace(/^WHERE\s*/, '') || 'r.is_deleted = 0'];
+  const flatParams = [];
 
   if (tags && tags.length > 0) {
     conditions.push(`r.id IN (SELECT resource_id FROM resource_tag WHERE tag_id IN (${tags.map(() => '?').join(',')}))`);
-    // 这里需要手动构建，better-sqlite3 不支持数组参数展开，我们用动态 SQL
+    flatParams.push(...tags);
   }
-
   if (groups && groups.length > 0) {
     conditions.push(`r.id IN (SELECT resource_id FROM resource_group WHERE group_id IN (${groups.map(() => '?').join(',')}))`);
+    flatParams.push(...groups);
   }
 
-  if (has_download === true) {
-    conditions.push('r.id IN (SELECT resource_id FROM download)');
-  } else if (has_download === false) {
-    conditions.push('r.id NOT IN (SELECT resource_id FROM download)');
-  }
+  const finalWhere = `WHERE ${conditions.join(' AND ')}`;
 
-  // 构建动态参数
-  const flatParams = [];
-  if (tags) flatParams.push(...tags);
-  if (groups) flatParams.push(...groups);
-
-  const whereClause = `WHERE ${conditions.join(' AND ')}`;
-  const sortOrder = order.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
-
-  const countSql = `SELECT COUNT(*) as total FROM resource r ${whereClause}`;
-  const { total } = db.prepare(countSql).get(params);
+  const countSql = `SELECT COUNT(*) as total FROM resource r ${finalWhere}`;
+  const bindValues = [...Object.values(params), ...flatParams];
+  const { total } = db.prepare(countSql).get(...bindValues);
 
   const sql = `
-    SELECT r.*, (SELECT COUNT(*) FROM screenshot WHERE resource_id = r.id) as screenshot_count, (SELECT id FROM screenshot WHERE resource_id = r.id ORDER BY "order" LIMIT 1) as first_screenshot_id
+    SELECT r.*, ${SCREENSHOT_SUBQUERY}
     FROM resource r
-    ${whereClause}
-    ORDER BY r.${sort} ${sortOrder}
+    ${finalWhere}
+    ORDER BY ${safeSort} ${safeOrder}
     LIMIT ? OFFSET ?
   `;
-
-  // 合并参数：先放命名参数的值，再放 flat 参数
-  const allParams = { ...params };
-  const paramKeys = ['limit', 'offset'];
-  const stmt = db.prepare(sql);
-  // 简化处理，直接构造绑定值数组
-  const bindValues = [...Object.values(params), ...flatParams, parseInt(limit), offset];
-  const items = db.prepare(sql).all(...bindValues);
+  const items = db.prepare(sql).all(...bindValues, parseInt(limit), offset);
 
   res.json({ total, page: parseInt(page), limit: parseInt(limit), items });
 });

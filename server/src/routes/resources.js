@@ -2,24 +2,20 @@ import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { getDb } from '../database/connection.js';
 import writeQueue from '../database/write-queue.js';
+import { dbWrite } from '../database/helpers.js';
 import sharp from 'sharp';
 import torrentParser from '../services/torrent-parser.js';
 import tmdbService from '../services/tmdb.js';
-import { extractCandidateTitle } from '../services/title-extractor.js';
+import { extractCandidateTitle, extractDnName } from '../services/title-extractor.js';
+import { buildResourceWhereClause, buildOrderClause, SCREENSHOT_SUBQUERY } from '../lib/query-builder.js';
 
 const router = Router();
 
 /**
- * 从磁链中提取显示名称
+ * 从磁链中提取显示名称（复用 title-extractor）
  */
 function extractMagnetName(uri) {
-  const match = uri.match(/[?&]dn=([^&]+)/i);
-  if (!match) return null;
-  try {
-    return decodeURIComponent(match[1]).replace(/\+/g, ' ');
-  } catch {
-    return match[1].replace(/\+/g, ' ');
-  }
+  return extractDnName(uri);
 }
 
 /**
@@ -36,70 +32,23 @@ router.get('/', (req, res) => {
     page = 1, limit = 50,
   } = req.query;
 
-  // 排序字段白名单
-  const ALLOWED_SORTS = ['created_at', 'updated_at', 'title', 'rating', 'total_size', 'status', 'category'];
-  const safeSort = ALLOWED_SORTS.includes(sort) ? sort : 'created_at';
-  const safeOrder = order.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
+  const { whereClause, params } = buildResourceWhereClause({
+    status, category, rating_min, rating_max,
+    is_deleted, search, tag, group,
+    source_app, has_download,
+  });
+  const { safeSort, safeOrder } = buildOrderClause(sort, order);
 
   const offset = (parseInt(page) - 1) * parseInt(limit);
-  const conditions = [];
-  const params = {};
-
-  if (status) {
-    conditions.push('r.status = @status');
-    params.status = status;
-  }
-  if (category) {
-    conditions.push('r.category = @category');
-    params.category = category;
-  }
-  if (rating_min) {
-    conditions.push('r.rating >= @rating_min');
-    params.rating_min = parseInt(rating_min);
-  }
-  if (rating_max) {
-    conditions.push('r.rating <= @rating_max');
-    params.rating_max = parseInt(rating_max);
-  }
-  if (is_deleted !== undefined) {
-    conditions.push('r.is_deleted = @is_deleted');
-    params.is_deleted = parseInt(is_deleted);
-  }
-  if (search) {
-    conditions.push('(r.title LIKE @search OR r.description LIKE @search OR r.magnet_uri LIKE @search)');
-    params.search = `%${search}%`;
-  }
-  if (tag) {
-    conditions.push('r.id IN (SELECT resource_id FROM resource_tag WHERE tag_id = @tag)');
-    params.tag = tag;
-  }
-  if (group) {
-    conditions.push('r.id IN (SELECT resource_id FROM resource_group WHERE group_id = @group)');
-    params.group = group;
-  }
-  if (source_app) {
-    conditions.push('r.source_app = @source_app');
-    params.source_app = source_app;
-  }
-  if (has_download === '1') {
-    conditions.push('r.id IN (SELECT resource_id FROM download)');
-  }
-  if (has_download === '0') {
-    conditions.push('r.id NOT IN (SELECT resource_id FROM download)');
-  }
-
-  const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
   const countSql = `SELECT COUNT(*) as total FROM resource r ${whereClause}`;
   const { total } = db.prepare(countSql).get(params);
 
   const sql = `
-    SELECT r.*,
-      (SELECT COUNT(*) FROM screenshot WHERE resource_id = r.id) as screenshot_count,
-      (SELECT id FROM screenshot WHERE resource_id = r.id ORDER BY "order" LIMIT 1) as first_screenshot_id
+    SELECT r.*, ${SCREENSHOT_SUBQUERY}
     FROM resource r
     ${whereClause}
-    ORDER BY r.${safeSort} ${safeOrder}
+    ORDER BY ${safeSort} ${safeOrder}
     LIMIT @limit OFFSET @offset
   `;
   const resources = db.prepare(sql).all({ ...params, limit: parseInt(limit), offset });
@@ -247,22 +196,19 @@ router.post('/import-torrent', async (req, res) => {
   const title = parsed.name || name || '未命名种子';
   const totalSize = parsed.totalSize || 0;
 
-  await writeQueue.enqueue(() => {
-    db.prepare(`
-      INSERT INTO resource (id, magnet_uri, title, torrent_blob, total_size, source_app, raw_context, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 'draft')
-    `).run(id, magnetUri, title, torrentBuf, totalSize, sourceApp || 'torrent-drag', '');
-  });
+  await dbWrite(
+    `INSERT INTO resource (id, magnet_uri, title, torrent_blob, total_size, source_app, raw_context, status)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 'draft')`,
+    id, magnetUri, title, torrentBuf, totalSize, sourceApp || 'torrent-drag', ''
+  );
 
   // 缓存文件列表
   if (parsed.files && parsed.files.length > 0) {
     for (const file of parsed.files) {
-      await writeQueue.enqueue(() => {
-        db.prepare(`
-          INSERT INTO file_cache (id, resource_id, filename, path, size)
-          VALUES (?, ?, ?, ?, ?)
-        `).run(uuidv4(), id, file.name, file.path, file.size);
-      });
+      await dbWrite(
+        'INSERT INTO file_cache (id, resource_id, filename, path, size) VALUES (?, ?, ?, ?, ?)',
+        uuidv4(), id, file.name, file.path, file.size
+      );
     }
   }
 
@@ -307,12 +253,11 @@ router.post('/', async (req, res) => {
       title = extractMagnetName(link.uri) || '未命名资源';
     }
 
-    await writeQueue.enqueue(() => {
-      db.prepare(`
-        INSERT INTO resource (id, magnet_uri, title, source_app, source_process, raw_context, status)
-        VALUES (?, ?, ?, ?, ?, ?, 'draft')
-      `).run(id, link.uri, title, sourceApp || 'unknown', sourceProcess || '', contextText || '');
-    });
+    await dbWrite(
+      `INSERT INTO resource (id, magnet_uri, title, source_app, source_process, raw_context, status)
+       VALUES (?, ?, ?, ?, ?, ?, 'draft')`,
+      id, link.uri, title, sourceApp || 'unknown', sourceProcess || '', contextText || ''
+    );
 
     results.push({ id, uri: link.uri, created: true, suggestedTitle: title });
   }
@@ -356,12 +301,10 @@ router.patch('/:id', async (req, res) => {
   });
 
   // 记录日志
-  await writeQueue.enqueue(() => {
-    db.prepare(`
-      INSERT INTO history (id, resource_id, action, detail)
-      VALUES (?, ?, 'updated', ?)
-    `).run(uuidv4(), id, JSON.stringify(Object.keys(updates).filter(k => k !== 'id')));
-  });
+  await dbWrite(
+    `INSERT INTO history (id, resource_id, action, detail) VALUES (?, ?, 'updated', ?)`,
+    uuidv4(), id, JSON.stringify(Object.keys(updates).filter(k => k !== 'id'))
+  );
 
   const updated = db.prepare('SELECT * FROM resource WHERE id = ?').get(id);
   res.json(updated);
@@ -380,16 +323,12 @@ router.delete('/:id', async (req, res) => {
     return res.status(404).json({ error: 'Resource not found' });
   }
 
-  await writeQueue.enqueue(() => {
-    db.prepare('UPDATE resource SET is_deleted = 1, updated_at = datetime(\'now\') WHERE id = ?').run(id);
-  });
+  await dbWrite("UPDATE resource SET is_deleted = 1, updated_at = datetime('now') WHERE id = ?", id);
 
-  await writeQueue.enqueue(() => {
-    db.prepare(`
-      INSERT INTO history (id, resource_id, action, detail)
-      VALUES (?, ?, 'deleted', ?)
-    `).run(uuidv4(), id, '{}');
-  });
+  await dbWrite(
+    `INSERT INTO history (id, resource_id, action, detail) VALUES (?, ?, 'deleted', ?)`,
+    uuidv4(), id, '{}'
+  );
 
   res.json({ success: true });
 });
@@ -401,10 +340,7 @@ router.delete('/:id', async (req, res) => {
 router.delete('/:id/purge', async (req, res) => {
   const { id } = req.params;
 
-  await writeQueue.enqueue(() => {
-    const db = getDb();
-    db.prepare('DELETE FROM resource WHERE id = ?').run(id);
-  });
+  await dbWrite('DELETE FROM resource WHERE id = ?', id);
 
   res.json({ success: true });
 });
@@ -459,18 +395,18 @@ router.post('/:id/screenshots', async (req, res) => {
       ).get(id);
       const order = (orderResult?.max_order ?? -1) + 1;
 
-      await writeQueue.enqueue(() => {
-        db.prepare(`
-          INSERT INTO screenshot (id, resource_id, image, thumbnail, "order", width, height, format)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        `).run(screenshotId, id, imageBuffer, thumbnail, order, width, height, format);
-      });
+      await dbWrite(
+        `INSERT INTO screenshot (id, resource_id, image, thumbnail, "order", width, height, format)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        screenshotId, id, imageBuffer, thumbnail, order, width, height, format
+      );
 
       // 如果是第一条记录，自动提升状态
       if (resource.status === 'draft') {
-        await writeQueue.enqueue(() => {
-          db.prepare('UPDATE resource SET status = \'active\', updated_at = datetime(\'now\') WHERE id = ?').run(id);
-        });
+        await dbWrite(
+          "UPDATE resource SET status = 'active', updated_at = datetime('now') WHERE id = ?",
+          id
+        );
       }
 
       res.status(201).json({
@@ -494,10 +430,7 @@ router.post('/:id/screenshots', async (req, res) => {
 router.delete('/:id/screenshots/:screenshotId', async (req, res) => {
   const { id, screenshotId } = req.params;
 
-  await writeQueue.enqueue(() => {
-    const db = getDb();
-    db.prepare('DELETE FROM screenshot WHERE id = ? AND resource_id = ?').run(screenshotId, id);
-  });
+  await dbWrite('DELETE FROM screenshot WHERE id = ? AND resource_id = ?', screenshotId, id);
 
   res.json({ success: true });
 });

@@ -54,45 +54,53 @@ async function request(endpoint, options = {}) {
 }
 
 /**
+ * 通用 API JSON 请求（自动 parse JSON，消除 .then(r => r.json()) 重复）
+ */
+async function requestJson(endpoint, options = {}) {
+  const res = await request(endpoint, options);
+  return res.json();
+}
+
+/**
  * API 方法
  */
 export const api = {
   // Auth
   login: (password) =>
-    request('/auth/login', { method: 'POST', body: { password } }).then(r => r.json()),
+    requestJson('/auth/login', { method: 'POST', body: { password } }),
 
   checkStatus: () =>
-    request('/auth/status').then(r => r.json()),
+    requestJson('/auth/status'),
 
   qbConfig: () =>
-    request('/auth/config').then(r => r.json()),
+    requestJson('/auth/config'),
 
   updateConfig: (data) =>
-    request('/auth/config', { method: 'PUT', body: data }).then(r => r.json()),
+    requestJson('/auth/config', { method: 'PUT', body: data }),
 
   // Resources
   getResources: (params = {}) => {
     const qs = new URLSearchParams(params).toString();
-    return request(`/resources?${qs}`).then(r => r.json());
+    return requestJson(`/resources?${qs}`);
   },
 
   getResource: (id) =>
-    request(`/resources/${id}`).then(r => r.json()),
+    requestJson(`/resources/${id}`),
 
   createResources: (data) =>
-    request('/resources', { method: 'POST', body: data }).then(r => r.json()),
+    requestJson('/resources', { method: 'POST', body: data }),
 
   importTorrent: (data) =>
-    request('/resources/import-torrent', { method: 'POST', body: data }).then(r => r.json()),
+    requestJson('/resources/import-torrent', { method: 'POST', body: data }),
 
   updateResource: (id, data) =>
-    request(`/resources/${id}`, { method: 'PATCH', body: data }).then(r => r.json()),
+    requestJson(`/resources/${id}`, { method: 'PATCH', body: data }),
 
   deleteResource: (id) =>
-    request(`/resources/${id}`, { method: 'DELETE' }).then(r => r.json()),
+    requestJson(`/resources/${id}`, { method: 'DELETE' }),
 
   purgeResource: (id) =>
-    request(`/resources/${id}/purge`, { method: 'DELETE' }).then(r => r.json()),
+    requestJson(`/resources/${id}/purge`, { method: 'DELETE' }),
 
   // Screenshots
   getScreenshotUrl: (resourceId, screenshotId, size = 'thumb') => {
@@ -109,7 +117,7 @@ export const api = {
     }).then(r => r.json()),
 
   deleteScreenshot: (resourceId, screenshotId) =>
-    request(`/resources/${resourceId}/screenshots/${screenshotId}`, { method: 'DELETE' }).then(r => r.json()),
+    requestJson(`/resources/${resourceId}/screenshots/${screenshotId}`, { method: 'DELETE' }),
 
   // Torrent
   getTorrentUrl: (resourceId) => {
@@ -119,74 +127,74 @@ export const api = {
   },
 
   cacheFiles: (resourceId) =>
-    request(`/resources/${resourceId}/cache-files`, { method: 'POST' }).then(r => r.json()),
+    requestJson(`/resources/${resourceId}/cache-files`, { method: 'POST' }),
 
   tmdbMatch: (resourceId) =>
-    request(`/resources/${resourceId}/tmdb-match`, { method: 'POST' }).then(r => r.json()),
+    requestJson(`/resources/${resourceId}/tmdb-match`, { method: 'POST' }),
 
   // TMDB
   tmdbSearch: (q, type = 'multi') =>
-    request(`/tmdb/search?q=${encodeURIComponent(q)}&type=${type}`).then(r => r.json()),
+    requestJson(`/tmdb/search?q=${encodeURIComponent(q)}&type=${type}`),
 
   tmdbMovie: (movieId) =>
-    request(`/tmdb/movie/${movieId}`).then(r => r.json()),
+    requestJson(`/tmdb/movie/${movieId}`),
 
   tmdbTV: (tvId) =>
-    request(`/tmdb/tv/${tvId}`).then(r => r.json()),
+    requestJson(`/tmdb/tv/${tvId}`),
 
   // Downloads
   getDownloads: () =>
-    request('/downloads').then(r => r.json()),
+    requestJson('/downloads'),
 
   createDownload: (data) =>
-    request('/downloads', { method: 'POST', body: data }).then(r => r.json()),
+    requestJson('/downloads', { method: 'POST', body: data }),
 
   updateDownload: (id, data) =>
-    request(`/downloads/${id}`, { method: 'PATCH', body: data }).then(r => r.json()),
+    requestJson(`/downloads/${id}`, { method: 'PATCH', body: data }),
 
   deleteDownload: (id, deleteQbTask = false, deleteFiles = false) =>
-    request(`/downloads/${id}`, { method: 'DELETE', body: { delete_qb_task: deleteQbTask, delete_files: deleteFiles } }).then(r => r.json()),
+    requestJson(`/downloads/${id}`, { method: 'DELETE', body: { delete_qb_task: deleteQbTask, delete_files: deleteFiles } }),
 
   // Tags
   getTags: () =>
-    request('/tags').then(r => r.json()),
+    requestJson('/tags'),
 
   createTag: (name, color) =>
-    request('/tags', { method: 'POST', body: { name, color } }).then(r => r.json()),
+    requestJson('/tags', { method: 'POST', body: { name, color } }),
 
   deleteTag: (id) =>
-    request(`/tags/${id}`, { method: 'DELETE' }).then(r => r.json()),
+    requestJson(`/tags/${id}`, { method: 'DELETE' }),
 
   updateTag: (id, data) =>
-    request(`/tags/${id}`, { method: 'PATCH', body: data }).then(r => r.json()),
+    requestJson(`/tags/${id}`, { method: 'PATCH', body: data }),
 
   addTagToResource: (resourceId, tagId) =>
-    request(`/tags/resources/${resourceId}/tags`, { method: 'POST', body: { tag_id: tagId } }).then(r => r.json()),
+    requestJson(`/tags/resources/${resourceId}/tags`, { method: 'POST', body: { tag_id: tagId } }),
 
   removeTagFromResource: (resourceId, tagId) =>
-    request(`/tags/resources/${resourceId}/tags/${tagId}`, { method: 'DELETE' }).then(r => r.json()),
+    requestJson(`/tags/resources/${resourceId}/tags/${tagId}`, { method: 'DELETE' }),
 
   // Groups
   getGroups: () =>
-    request('/groups').then(r => r.json()),
+    requestJson('/groups'),
 
   createGroup: (name, description) =>
-    request('/groups', { method: 'POST', body: { name, description } }).then(r => r.json()),
+    requestJson('/groups', { method: 'POST', body: { name, description } }),
 
   updateGroup: (id, data) =>
-    request(`/groups/${id}`, { method: 'PATCH', body: data }).then(r => r.json()),
+    requestJson(`/groups/${id}`, { method: 'PATCH', body: data }),
 
   deleteGroup: (id) =>
-    request(`/groups/${id}`, { method: 'DELETE' }).then(r => r.json()),
+    requestJson(`/groups/${id}`, { method: 'DELETE' }),
 
   getGroup: (id) =>
-    request(`/groups/${id}`).then(r => r.json()),
+    requestJson(`/groups/${id}`),
 
   addToGroup: (groupId, resourceId) =>
-    request(`/groups/${groupId}/resources/${resourceId}`, { method: 'POST' }).then(r => r.json()),
+    requestJson(`/groups/${groupId}/resources/${resourceId}`, { method: 'POST' }),
 
   removeFromGroup: (groupId, resourceId) =>
-    request(`/groups/${groupId}/resources/${resourceId}`, { method: 'DELETE' }).then(r => r.json()),
+    requestJson(`/groups/${groupId}/resources/${resourceId}`, { method: 'DELETE' }),
 
   // Export/Import
   exportData: (includeScreenshots = true) =>
@@ -203,34 +211,34 @@ export const api = {
 
   // Search
   search: (q, type = 'all') =>
-    request(`/search?q=${encodeURIComponent(q)}&type=${type}`).then(r => r.json()),
+    requestJson(`/search?q=${encodeURIComponent(q)}&type=${type}`),
 
   advancedSearch: (criteria) =>
-    request('/search/advanced', { method: 'POST', body: criteria }).then(r => r.json()),
+    requestJson('/search/advanced', { method: 'POST', body: criteria }),
 
   // qBittorrent
   qbStatus: () =>
-    request('/qbittorrent/status').then(r => r.json()),
+    requestJson('/qbittorrent/status'),
 
   qbTorrents: () =>
-    request('/qbittorrent/torrents').then(r => r.json()),
+    requestJson('/qbittorrent/torrents'),
 
   qbTransferInfo: () =>
-    request('/qbittorrent/transfer').then(r => r.json()),
+    requestJson('/qbittorrent/transfer'),
 
   qbPause: (hash) =>
-    request(`/qbittorrent/torrents/${hash}/pause`, { method: 'POST' }).then(r => r.json()),
+    requestJson(`/qbittorrent/torrents/${hash}/pause`, { method: 'POST' }),
 
   qbResume: (hash) =>
-    request(`/qbittorrent/torrents/${hash}/resume`, { method: 'POST' }).then(r => r.json()),
+    requestJson(`/qbittorrent/torrents/${hash}/resume`, { method: 'POST' }),
 
   qbDelete: (hash, deleteFiles = false) =>
-    request(`/qbittorrent/torrents/${hash}`, { method: 'DELETE', body: { deleteFiles } }).then(r => r.json()),
+    requestJson(`/qbittorrent/torrents/${hash}`, { method: 'DELETE', body: { deleteFiles } }),
 
   qbFetchMetadata: (resourceId) =>
-    request(`/qbittorrent/fetch-metadata/${resourceId}`, { method: 'POST' }).then(r => r.json()),
+    requestJson(`/qbittorrent/fetch-metadata/${resourceId}`, { method: 'POST' }),
 
   // File Cache
   refreshFileCache: (resourceId) =>
-    request(`/resources/${resourceId}/refresh-files`, { method: 'POST' }).then(r => r.json()),
+    requestJson(`/resources/${resourceId}/refresh-files`, { method: 'POST' }),
 };

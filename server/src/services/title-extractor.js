@@ -7,8 +7,9 @@
 
 /**
  * 从磁链 URI 的 dn= 参数提取显示名称
+ * 供外部模块复用（如 resources.js 的 extractMagnetName 与此相同）
  */
-function extractDnName(uri) {
+export function extractDnName(uri) {
   const match = uri.match(/[?&]dn=([^&]+)/i);
   if (!match) return null;
   try {

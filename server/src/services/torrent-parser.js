@@ -1,4 +1,5 @@
 import bencode from 'bencode';
+import crypto from 'crypto';
 
 /**
  * .torrent 文件解析服务
@@ -63,8 +64,6 @@ class TorrentParser {
    * 计算 info_hash
    */
   computeInfoHash(info, encodedInfo) {
-    // Simple hash using crypto
-    const crypto = require('crypto');
     return crypto.createHash('sha1').update(encodedInfo).digest('hex');
   }
 }
