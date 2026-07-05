@@ -71,6 +71,54 @@ function isNoiseLine(line) {
 }
 
 /**
+ * 从上下文文本中提取与特定磁链相关的上下文片段（前后各 2 行）
+ * 用于 raw_context 按链接存精确小上下文，而非存整段剪贴板文本。
+ *
+ * @param {string} contextText - 完整的剪切板/文件文本
+ * @param {string} magnetUri - 磁链 URI
+ * @returns {string} 相关的上下文片段，最多保留磁链所在行前后各 2 行
+ */
+export function extractContextSnippet(contextText, magnetUri) {
+  if (!contextText || !contextText.trim()) return '';
+
+  const hashMatch = magnetUri.match(/btih:([a-fA-F0-9]{40}|[A-Z2-7]{32})/i);
+  const hash = hashMatch ? hashMatch[1] : null;
+  if (!hash) return contextText.substring(0, 500);
+
+  const lines = contextText.split(/\r?\n/);
+  let hashLineIndex = -1;
+
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].toLowerCase().includes(hash.toLowerCase())) {
+      hashLineIndex = i;
+      break;
+    }
+  }
+
+  if (hashLineIndex === -1) {
+    // 没找到 hash 所在行，回退到 magnet: 关键词
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].includes('magnet:')) {
+        hashLineIndex = i;
+        break;
+      }
+    }
+  }
+
+  if (hashLineIndex === -1) {
+    // 截断回退：最多取前 500 字符
+    return contextText.substring(0, 500);
+  }
+
+  const start = Math.max(0, hashLineIndex - 2);
+  const end = Math.min(lines.length, hashLineIndex + 3); // +3 = 该行 + 后 2 行
+  const snippet = lines.slice(start, end).join('\n').trim();
+
+  // 防止片段仍然过大（例如某一行极长），上限 2000 字符
+  return snippet.length > 2000 ? snippet.substring(0, 2000) : snippet;
+}
+
+/**
  * 从上下文文本中提取候选标题
  *
  * @param {string} contextText - 完整的剪切板/文件文本
