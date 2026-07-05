@@ -1,22 +1,20 @@
-<script context="module">
-    function formatFileSize(bytes) {
-        if (!bytes) return "0 B";
-        const units = ["B", "KB", "MB", "GB", "TB"];
-        let i = 0,
-            size = bytes;
-        while (size >= 1024 && i < units.length - 1) {
-            size /= 1024;
-            i++;
-        }
-        return `${size.toFixed(1)} ${units[i]}`;
-    }
-</script>
-
 <script>
     import { onMount } from "svelte";
     import { api } from "../lib/api.js";
-    import { Search, SlidersHorizontal, X, ChevronLeft, ChevronRight } from "lucide-svelte";
+    import {
+        Search,
+        SlidersHorizontal,
+        X,
+        ChevronLeft,
+        ChevronRight,
+    } from "lucide-svelte";
     import SearchBar from "../components/SearchBar.svelte";
+    import { formatFileSize } from "../lib/format.js";
+    import {
+        CATEGORY_OPTIONS,
+        CATEGORY_LABELS,
+        SOURCE_APP_OPTIONS,
+    } from "../lib/constants.js";
 
     let query = "";
     let results = null;
@@ -39,16 +37,8 @@
         has_download: null,
     };
 
-    const categories = ["影视", "软件", "书籍", "音乐", "其他"];
-    const sources = [
-        "微信",
-        "QQ",
-        "Chrome",
-        "Edge",
-        "Firefox",
-        "浏览器",
-        "未知",
-    ];
+    const categories = CATEGORY_OPTIONS.filter(Boolean);
+    const sources = SOURCE_APP_OPTIONS;
 
     async function doSearch(page = 1) {
         if (!query.trim()) return;
@@ -59,7 +49,10 @@
             const res = await api.search(query);
             results = res;
             if (res.resources) {
-                totalPages = Math.max(1, Math.ceil((res.resources.total || 0) / PAGE_SIZE));
+                totalPages = Math.max(
+                    1,
+                    Math.ceil((res.resources.total || 0) / PAGE_SIZE),
+                );
             }
         } catch (e) {
             console.error(e);
@@ -77,7 +70,12 @@
                     ([, v]) => v !== "" && v !== null && v !== 0,
                 ),
             );
-            const res = await api.advancedSearch({ q: query, ...active, page, limit: PAGE_SIZE });
+            const res = await api.advancedSearch({
+                q: query,
+                ...active,
+                page,
+                limit: PAGE_SIZE,
+            });
             results = {
                 resources: { items: res.items, total: res.total },
                 files: null,
@@ -153,7 +151,9 @@
                     <select bind:value={filters.category}>
                         <option value="">全部</option>
                         {#each categories as cat}
-                            <option value={cat}>{cat}</option>
+                            <option value={cat}
+                                >{CATEGORY_LABELS[cat] || cat}</option
+                            >
                         {/each}
                     </select>
                 </label>
@@ -284,11 +284,20 @@
             <!-- 分页 -->
             {#if totalPages > 1 && results.resources}
                 <div class="pagination">
-                    <button disabled={currentPage <= 1} on:click={() => goPage(currentPage - 1)}>
+                    <button
+                        disabled={currentPage <= 1}
+                        on:click={() => goPage(currentPage - 1)}
+                    >
                         <ChevronLeft size={16} />
                     </button>
-                    <span class="page-info">{currentPage} / {totalPages} (共 {results.resources.total || 0} 条)</span>
-                    <button disabled={currentPage >= totalPages} on:click={() => goPage(currentPage + 1)}>
+                    <span class="page-info"
+                        >{currentPage} / {totalPages} (共 {results.resources
+                            .total || 0} 条)</span
+                    >
+                    <button
+                        disabled={currentPage >= totalPages}
+                        on:click={() => goPage(currentPage + 1)}
+                    >
                         <ChevronRight size={16} />
                     </button>
                 </div>
@@ -543,8 +552,17 @@
         display: flex;
     }
 
-    .pagination button:hover:not(:disabled) { background: #3a3a3a; color: #fff; }
-    .pagination button:disabled { opacity: 0.3; cursor: default; }
+    .pagination button:hover:not(:disabled) {
+        background: #3a3a3a;
+        color: #fff;
+    }
+    .pagination button:disabled {
+        opacity: 0.3;
+        cursor: default;
+    }
 
-    .page-info { font-size: 13px; color: #888; }
+    .page-info {
+        font-size: 13px;
+        color: #888;
+    }
 </style>

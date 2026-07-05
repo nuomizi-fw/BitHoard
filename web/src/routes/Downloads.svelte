@@ -14,6 +14,7 @@
     } from "lucide-svelte";
     import { showToast } from "../lib/stores/ui.js";
     import { wsClient } from "../lib/ws.js";
+    import { formatFileSize } from "../lib/format.js";
 
     let qbConnected = false;
     let qbVersion = "";
@@ -81,21 +82,9 @@
         return { ...dl, _progress: null };
     });
 
-    function formatSize(bytes) {
-        if (!bytes) return "0 B";
-        const units = ["B", "KB", "MB", "GB", "TB"];
-        let i = 0,
-            size = bytes;
-        while (size >= 1024 && i < units.length - 1) {
-            size /= 1024;
-            i++;
-        }
-        return `${size.toFixed(1)} ${units[i]}`;
-    }
-
     function formatSpeed(bytesPerSec) {
         if (!bytesPerSec || bytesPerSec === 0) return "";
-        return formatSize(bytesPerSec) + "/s";
+        return formatFileSize(bytesPerSec) + "/s";
     }
 
     function formatETA(seconds) {
@@ -178,7 +167,7 @@
                                     dl._state || dl.download_status,
                                 )}</span
                             >
-                            <span>{formatSize(dl.total_size)}</span>
+                            <span>{formatFileSize(dl.total_size)}</span>
                             {#if dl._num_seeds > 0}
                                 <span>种子 {dl._num_seeds}</span>
                             {/if}

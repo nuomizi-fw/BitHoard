@@ -1,13 +1,14 @@
 import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { getDb } from '../database/connection.js';
-import writeQueue from '../database/write-queue.js';
 import { dbWrite } from '../database/helpers.js';
 import sharp from 'sharp';
 import torrentParser from '../services/torrent-parser.js';
 import tmdbService from '../services/tmdb.js';
 import { extractCandidateTitle, extractDnName } from '../services/title-extractor.js';
 import { buildResourceWhereClause, buildOrderClause, SCREENSHOT_SUBQUERY } from '../lib/query-builder.js';
+
+import { cacheFilesFromTorrent } from '../services/file-cache.js';
 
 const router = Router();
 
@@ -296,9 +297,7 @@ router.patch('/:id', async (req, res) => {
   setClauses.push('updated_at = datetime(\'now\')');
   updates.id = id;
 
-  await writeQueue.enqueue(() => {
-    db.prepare(`UPDATE resource SET ${setClauses.join(', ')} WHERE id = @id`).run(updates);
-  });
+  await dbWrite(`UPDATE resource SET ${setClauses.join(', ')} WHERE id = @id`, updates);
 
   // 记录日志
   await dbWrite(
@@ -454,17 +453,7 @@ router.post('/:id/cache-files', (req, res) => {
   }
 
   // 清除旧缓存，写入新数据
-  db.transaction(() => {
-    db.prepare('DELETE FROM file_cache WHERE resource_id = ?').run(id);
-    const insert = db.prepare(`
-      INSERT INTO file_cache (id, resource_id, file_path, file_size, file_index)
-      VALUES (?, ?, ?, ?, ?)
-    `);
-
-    for (const file of parsed.files) {
-      insert.run(uuidv4(), id, file.path, file.size, file.index);
-    }
-  })();
+  cacheFilesFromTorrent(id, parsed);
 
   res.json({
     name: parsed.name,
@@ -492,16 +481,7 @@ router.post('/:id/refresh-files', (req, res) => {
     return res.status(400).json({ error: 'Failed to parse torrent' });
   }
 
-  db.transaction(() => {
-    db.prepare('DELETE FROM file_cache WHERE resource_id = ?').run(id);
-    const insert = db.prepare(`
-      INSERT INTO file_cache (id, resource_id, file_path, file_size, file_index)
-      VALUES (?, ?, ?, ?, ?)
-    `);
-    for (const file of parsed.files) {
-      insert.run(uuidv4(), id, file.path, file.size, file.index);
-    }
-  })();
+  cacheFilesFromTorrent(id, parsed);
 
   res.json({
     name: parsed.name,

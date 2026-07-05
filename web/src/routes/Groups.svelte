@@ -3,6 +3,8 @@
     import { link } from "svelte-routing";
     import { api } from "../lib/api.js";
     import { showToast } from "../lib/stores/ui.js";
+    import { debounce } from "../lib/utils.js";
+    import Modal from "../components/Modal.svelte";
     import {
         FolderOpen,
         Plus,
@@ -153,11 +155,7 @@
         }
     }
 
-    let searchTimer;
-    function onSearchInput() {
-        clearTimeout(searchTimer);
-        searchTimer = setTimeout(searchResources, 300);
-    }
+    const onSearchInput = debounce(searchResources, 300);
 </script>
 
 <div class="groups-page">
@@ -315,48 +313,38 @@
 </div>
 
 <!-- 新建/编辑对话框 -->
-{#if showDialog}
-    <div class="dialog-overlay" on:click|self={() => (showDialog = false)}>
-        <div class="dialog">
-            <div class="dialog-header">
-                <h3>{editingGroup ? "编辑分组" : "新建分组"}</h3>
-                <button class="btn-close" on:click={() => (showDialog = false)}
-                    ><X size={18} /></button
-                >
-            </div>
-            <div class="dialog-body">
-                <label>
-                    名称
-                    <input
-                        type="text"
-                        bind:value={formName}
-                        placeholder="分组名称"
-                    />
-                </label>
-                <label>
-                    描述
-                    <textarea
-                        bind:value={formDescription}
-                        placeholder="分组描述（可选）"
-                        rows="3"
-                    ></textarea>
-                </label>
-            </div>
-            <div class="dialog-footer">
-                <button class="btn-cancel" on:click={() => (showDialog = false)}
-                    >取消</button
-                >
-                <button
-                    class="btn-submit"
-                    on:click={saveGroup}
-                    disabled={saving || !formName.trim()}
-                >
-                    {saving ? "保存中..." : "保存"}
-                </button>
-            </div>
-        </div>
+<Modal
+    show={showDialog}
+    title={editingGroup ? "编辑分组" : "新建分组"}
+    on:close={() => (showDialog = false)}
+>
+    <div class="dialog-body">
+        <label>
+            名称
+            <input type="text" bind:value={formName} placeholder="分组名称" />
+        </label>
+        <label>
+            描述
+            <textarea
+                bind:value={formDescription}
+                placeholder="分组描述（可选）"
+                rows="3"
+            ></textarea>
+        </label>
     </div>
-{/if}
+    <div slot="footer">
+        <button class="btn-cancel" on:click={() => (showDialog = false)}
+            >取消</button
+        >
+        <button
+            class="btn-submit"
+            on:click={saveGroup}
+            disabled={saving || !formName.trim()}
+        >
+            {saving ? "保存中..." : "保存"}
+        </button>
+    </div>
+</Modal>
 
 <style>
     .groups-page {
@@ -620,46 +608,7 @@
         padding: 8px 0;
     }
 
-    /* Dialog */
-    .dialog-overlay {
-        position: fixed;
-        inset: 0;
-        background: rgba(0, 0, 0, 0.6);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        z-index: 1000;
-    }
-    .dialog {
-        background: #1e1e1e;
-        border: 1px solid #333;
-        border-radius: 12px;
-        width: 460px;
-        max-width: 90vw;
-    }
-    .dialog-header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 20px 24px 0;
-    }
-    .dialog-header h3 {
-        font-size: 18px;
-        color: #e0e0e0;
-    }
-    .btn-close {
-        background: none;
-        border: none;
-        color: #666;
-        cursor: pointer;
-        padding: 4px;
-        border-radius: 4px;
-        display: flex;
-    }
-    .btn-close:hover {
-        color: #aaa;
-        background: #2a2a2a;
-    }
+    /* Dialog content */
 
     .dialog-body {
         padding: 16px 24px;
@@ -690,12 +639,7 @@
         border-color: #6366f1;
     }
 
-    .dialog-footer {
-        display: flex;
-        gap: 8px;
-        justify-content: flex-end;
-        padding: 12px 24px 20px;
-    }
+    /* Dialog content */
     .btn-cancel {
         background: #2a2a2a;
         border: none;

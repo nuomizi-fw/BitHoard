@@ -1,15 +1,16 @@
 const { clipboard, nativeImage } = require('electron');
 const { exec } = require('child_process');
 
-// 链接匹配正则（与 server/src/lib/constants.js BTIH_PATTERNS 保持同步）
-const PATTERNS = {
+// 默认链接匹配正则（运行时可通过 initClipboardMonitor 的 patterns 参数覆盖）
+const DEFAULT_PATTERNS = {
   magnet: /magnet:\?xt=urn:btih:(?:[a-fA-F0-9]{40}|[A-Z2-7]{32})(?=&|\r|\n|$)(?:&[a-zA-Z]+=[^&\r\n]+)*/gi,
   torrentUrl: /https?:\/\/[^\s"'<>]+\.torrent/gi,
   ed2k: /ed2k:\/\/\|file\|[^|]+\|[a-fA-F0-9]{32}\|/gi,
-  btihHash: /\b([a-fA-F0-9]{40})\b/g,
-  btihBase32: /\b([A-Z2-7a-z2-7]{32})\b/gi,
+  hex: /\b([a-fA-F0-9]{40})\b/g,
+  base32: /\b([A-Z2-7a-z2-7]{32})\b/gi,
   truncatedMagnet: /\b([A-Z2-7a-z2-7]{32}|[a-fA-F0-9]{40})(?:&[a-z]+=[^&\s<>"]+)+\b/gi,
 };
+let PATTERNS = DEFAULT_PATTERNS;
 
 let lastClipboardText = '';
 let lastClipboardImageHash = '';
@@ -101,7 +102,7 @@ function extractLinks(text) {
 
   // 提取标准 magnet / torrent / ed2k 链接
   for (const [type, pattern] of Object.entries(PATTERNS)) {
-    if (type === 'btihHash' || type === 'btihBase32' || type === 'truncatedMagnet') continue; // 单独处理
+    if (type === 'hex' || type === 'base32' || type === 'truncatedMagnet') continue; // 单独处理
     const matches = text.matchAll(pattern);
     for (const match of matches) {
       const uri = match[0];
@@ -130,7 +131,7 @@ function extractLinks(text) {
   }
 
   // 提取纯 Base32 BTIH hash，自动构造 magnet URI
-  const base32Matches = text.matchAll(PATTERNS.btihBase32);
+  const base32Matches = text.matchAll(PATTERNS.base32);
   for (const match of base32Matches) {
     const hash = match[1];
     const lowerHash = hash.toLowerCase();
@@ -141,7 +142,7 @@ function extractLinks(text) {
   }
 
   // 提取纯十六进制 BTIH hash，自动构造 magnet URI
-  const hashMatches = text.matchAll(PATTERNS.btihHash);
+  const hashMatches = text.matchAll(PATTERNS.hex);
   for (const match of hashMatches) {
     const hash = match[1];
     const lowerHash = hash.toLowerCase();
@@ -288,8 +289,9 @@ function checkClipboard() {
 /**
  * 初始化剪贴板监控
  */
-function initClipboardMonitor(win) {
+function initClipboardMonitor(win, patterns) {
   mainWindow = win;
+  if (patterns) PATTERNS = patterns;
 
   // 轮询间隔 500ms（同时检查文本和图像）
   monitorInterval = setInterval(() => {

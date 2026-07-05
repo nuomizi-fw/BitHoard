@@ -2,8 +2,8 @@ import { Router } from 'express';
 import qbClient from '../services/qbittorrent.js';
 import torrentParser from '../services/torrent-parser.js';
 import { getDb } from '../database/connection.js';
-import { v4 as uuidv4 } from 'uuid';
 import { dbWrite } from '../database/helpers.js';
+import { cacheFilesFromQbittorrent } from '../services/file-cache.js';
 
 const router = Router();
 
@@ -102,13 +102,7 @@ router.post('/fetch-metadata/:resourceId', async (req, res) => {
     // 获取文件列表并缓存
     const files = await qbClient.getTorrentFiles(download.qb_task_hash);
     if (files && files.length > 0) {
-      await dbWrite('DELETE FROM file_cache WHERE resource_id = ?', resourceId);
-      for (const [i, f] of files.entries()) {
-        await dbWrite(
-          'INSERT INTO file_cache (id, resource_id, file_path, file_size, file_index) VALUES (?, ?, ?, ?, ?)',
-          uuidv4(), resourceId, f.name, f.size, i
-        );
-      }
+      cacheFilesFromQbittorrent(resourceId, files);
     }
 
     // 更新下载记录

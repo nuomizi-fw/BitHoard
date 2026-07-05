@@ -39,6 +39,15 @@ registerFileDroppedIpc();
 registerAppInfoIpc();
 
 app.whenReady().then(async () => {
+  // 动态加载共享常量（BTIH 匹配模式），传递给 clipboard-monitor 以保持同步
+  let btihPatterns = null;
+  try {
+    const constants = await import('../server/src/lib/constants.js');
+    btihPatterns = constants.BTIH_PATTERNS;
+  } catch (err) {
+    console.warn('[main] Failed to load BTIH_PATTERNS, clipboard-monitor will use defaults:', err.message);
+  }
+
   // ── 生产模式：嵌入启动后端服务器 ──
   // 开发模式下由 pnpm dev:server 单独启动，避免端口冲突
   if (!isDev) {
@@ -70,8 +79,8 @@ app.whenReady().then(async () => {
     mainWindow = null;
   });
 
-  tray = createTray(mainWindow, { initClipboardMonitor: (win) => initClipboardMonitor(win), stopClipboardMonitor });
-  initClipboardMonitor(mainWindow);
+  tray = createTray(mainWindow, { initClipboardMonitor: (win) => initClipboardMonitor(win, btihPatterns), stopClipboardMonitor });
+  initClipboardMonitor(mainWindow, btihPatterns);
   registerShortcuts(mainWindow);
 });
 

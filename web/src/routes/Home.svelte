@@ -3,14 +3,21 @@
     import { resources, stagingResources } from "../lib/stores/resources.js";
     import { viewMode } from "../lib/stores/ui.js";
     import ResourceCard from "../components/ResourceCard.svelte";
+    import Modal from "../components/Modal.svelte";
     import SearchBar from "../components/SearchBar.svelte";
     import { api } from "../lib/api.js";
     import { showToast } from "../lib/stores/ui.js";
     import { extractMagnetLinks } from "../lib/magnet.js";
+    import { CATEGORY_OPTIONS, CATEGORY_LABELS } from "../lib/constants.js";
     import {
-        LayoutGrid, List, Plus, X,
-        ChevronLeft, ChevronRight,
-        Filter, ArrowUpDown,
+        LayoutGrid,
+        List,
+        Plus,
+        X,
+        ChevronLeft,
+        ChevronRight,
+        Filter,
+        ArrowUpDown,
     } from "lucide-svelte";
 
     let loading = true;
@@ -41,12 +48,23 @@
 
     async function loadFilterOptions() {
         try {
-            [groups, tags] = await Promise.all([api.getGroups(), api.getTags()]);
-        } catch { /* 非关键 */ }
+            [groups, tags] = await Promise.all([
+                api.getGroups(),
+                api.getTags(),
+            ]);
+        } catch {
+            /* 非关键 */
+        }
     }
 
     function buildParams(page = 1) {
-        const p = { is_deleted: 0, limit: PAGE_SIZE, page, sort: sortField, order: sortOrder };
+        const p = {
+            is_deleted: 0,
+            limit: PAGE_SIZE,
+            page,
+            sort: sortField,
+            order: sortOrder,
+        };
         if (filterStatus) p.status = filterStatus;
         if (filterCategory) p.category = filterCategory;
         if (filterGroup) p.group = filterGroup;
@@ -100,9 +118,9 @@
         }
 
         // 推入暂存区
-        stagingResources.update(items => [
+        stagingResources.update((items) => [
             ...items,
-            ...links.map(l => ({
+            ...links.map((l) => ({
                 magnet_uri: l.uri,
                 source_app: "手动录入",
                 title: "",
@@ -112,7 +130,10 @@
             })),
         ]);
 
-        showToast({ type: "info", message: `已添加 ${links.length} 个资源到暂存区` });
+        showToast({
+            type: "info",
+            message: `已添加 ${links.length} 个资源到暂存区`,
+        });
         pasteText = "";
         showAddDialog = false;
     }
@@ -126,7 +147,11 @@
         </div>
         <div class="header-right">
             <SearchBar on:search={handleSearch} />
-            <button class="btn-filter" class:active={showFilters} on:click={() => (showFilters = !showFilters)}>
+            <button
+                class="btn-filter"
+                class:active={showFilters}
+                on:click={() => (showFilters = !showFilters)}
+            >
                 <Filter size={14} /> 筛选
             </button>
             <button class="btn-add" on:click={() => (showAddDialog = true)}>
@@ -166,14 +191,9 @@
                 <label>分类</label>
                 <select bind:value={filterCategory} on:change={applyFilters}>
                     <option value="">全部</option>
-                    <option value="movie">电影</option>
-                    <option value="tv">电视剧</option>
-                    <option value="anime">动画</option>
-                    <option value="music">音乐</option>
-                    <option value="game">游戏</option>
-                    <option value="software">软件</option>
-                    <option value="book">书籍</option>
-                    <option value="other">其他</option>
+                    {#each CATEGORY_OPTIONS.filter(Boolean) as cat}
+                        <option value={cat}>{CATEGORY_LABELS[cat]}</option>
+                    {/each}
                 </select>
             </div>
             <div class="filter-group">
@@ -181,7 +201,9 @@
                 <select bind:value={filterGroup} on:change={applyFilters}>
                     <option value="">全部</option>
                     {#each groups as g}
-                        <option value={g.id}>{g.name} ({g.resource_count})</option>
+                        <option value={g.id}
+                            >{g.name} ({g.resource_count})</option
+                        >
                     {/each}
                 </select>
             </div>
@@ -190,7 +212,9 @@
                 <select bind:value={filterTag} on:change={applyFilters}>
                     <option value="">全部</option>
                     {#each tags as t}
-                        <option value={t.id}>{t.name} ({t.resource_count})</option>
+                        <option value={t.id}
+                            >{t.name} ({t.resource_count})</option
+                        >
                     {/each}
                 </select>
             </div>
@@ -203,7 +227,14 @@
                     <option value="rating">评分</option>
                 </select>
             </div>
-            <button class="btn-icon" on:click={() => { sortOrder = sortOrder === 'asc' ? 'desc' : 'asc'; applyFilters(); }} title={sortOrder === 'asc' ? '升序' : '降序'}>
+            <button
+                class="btn-icon"
+                on:click={() => {
+                    sortOrder = sortOrder === "asc" ? "desc" : "asc";
+                    applyFilters();
+                }}
+                title={sortOrder === "asc" ? "升序" : "降序"}
+            >
                 <ArrowUpDown size={16} />
             </button>
             <button class="btn-text" on:click={clearFilters}>清除筛选</button>
@@ -229,11 +260,19 @@
         <!-- 分页 -->
         {#if totalPages > 1}
             <div class="pagination">
-                <button disabled={currentPage <= 1} on:click={() => loadResources(currentPage - 1)}>
+                <button
+                    disabled={currentPage <= 1}
+                    on:click={() => loadResources(currentPage - 1)}
+                >
                     <ChevronLeft size={16} />
                 </button>
-                <span class="page-info">{currentPage} / {totalPages} (共 {$resources.total} 条)</span>
-                <button disabled={currentPage >= totalPages} on:click={() => loadResources(currentPage + 1)}>
+                <span class="page-info"
+                    >{currentPage} / {totalPages} (共 {$resources.total} 条)</span
+                >
+                <button
+                    disabled={currentPage >= totalPages}
+                    on:click={() => loadResources(currentPage + 1)}
+                >
                     <ChevronRight size={16} />
                 </button>
             </div>
@@ -242,39 +281,31 @@
 </div>
 
 {#if showAddDialog}
-    <div class="dialog-overlay" on:click|self={() => (showAddDialog = false)}>
-        <div class="dialog">
-            <div class="dialog-header">
-                <h3>添加资源</h3>
-                <button
-                    class="btn-close"
-                    on:click={() => (showAddDialog = false)}
-                >
-                    <X size={18} />
-                </button>
-            </div>
-            <div class="dialog-body">
-                <p class="dialog-hint">
-                    粘贴磁链（magnet:?）后进入暂存区，可在底部暂存区确认入库
-                </p>
-                <textarea
-                    bind:value={pasteText}
-                    placeholder="magnet:?xt=urn:btih:..."
-                    rows="6"
-                    autofocus
-                ></textarea>
-            </div>
-            <div class="dialog-footer">
-                <button
-                    class="btn-cancel"
-                    on:click={() => (showAddDialog = false)}
-                >
-                    取消
-                </button>
-                <button class="btn-submit" on:click={handleAddResources} disabled={!pasteText.trim()}>添加到暂存区</button>
-            </div>
+    <Modal
+        show={showAddDialog}
+        title="添加资源"
+        on:close={() => (showAddDialog = false)}
+    >
+        <p class="dialog-hint">
+            粘贴磁链（magnet:?）后进入暂存区，可在底部暂存区确认入库
+        </p>
+        <textarea
+            bind:value={pasteText}
+            placeholder="magnet:?xt=urn:btih:..."
+            rows="6"
+            autofocus
+        ></textarea>
+        <div slot="footer">
+            <button class="btn-cancel" on:click={() => (showAddDialog = false)}>
+                取消
+            </button>
+            <button
+                class="btn-submit"
+                on:click={handleAddResources}
+                disabled={!pasteText.trim()}>添加到暂存区</button
+            >
         </div>
-    </div>
+    </Modal>
 {/if}
 
 <style>
@@ -406,7 +437,8 @@
         cursor: pointer;
     }
 
-    .btn-filter:hover, .btn-filter.active {
+    .btn-filter:hover,
+    .btn-filter.active {
         background: #3a3a3a;
         color: #fff;
     }
@@ -468,7 +500,10 @@
         display: flex;
     }
 
-    .btn-icon:hover { background: #2a2a2a; color: #fff; }
+    .btn-icon:hover {
+        background: #2a2a2a;
+        color: #fff;
+    }
 
     .btn-text {
         background: none;
@@ -479,7 +514,9 @@
         padding: 6px;
     }
 
-    .btn-text:hover { color: #ef4444; }
+    .btn-text:hover {
+        color: #ef4444;
+    }
 
     .pagination {
         display: flex;
@@ -499,69 +536,22 @@
         display: flex;
     }
 
-    .pagination button:hover:not(:disabled) { background: #3a3a3a; color: #fff; }
-    .pagination button:disabled { opacity: 0.3; cursor: default; }
-
-    .page-info { font-size: 13px; color: #888; }
-
-    /* Dialog */
-    .dialog-overlay {
-        position: fixed;
-        inset: 0;
-        background: rgba(0, 0, 0, 0.6);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        z-index: 1000;
+    .pagination button:hover:not(:disabled) {
+        background: #3a3a3a;
+        color: #fff;
+    }
+    .pagination button:disabled {
+        opacity: 0.3;
+        cursor: default;
     }
 
-    .dialog {
-        background: #1e1e1e;
-        border: 1px solid #333;
-        border-radius: 12px;
-        width: 520px;
-        max-width: 90vw;
-        box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
-    }
-
-    .dialog-header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 20px 24px 0;
-    }
-
-    .dialog-header h3 {
-        font-size: 18px;
-        color: #e0e0e0;
-    }
-
-    .btn-close {
-        background: none;
-        border: none;
-        color: #666;
-        cursor: pointer;
-        padding: 4px;
-        border-radius: 4px;
-        display: flex;
-    }
-
-    .btn-close:hover {
-        color: #aaa;
-        background: #2a2a2a;
-    }
-
-    .dialog-body {
-        padding: 16px 24px;
-    }
-
-    .dialog-hint {
+    .page-info {
         font-size: 13px;
-        color: #666;
-        margin-bottom: 12px;
+        color: #888;
     }
 
-    .dialog-body textarea {
+    /* Dialog content */
+    textarea {
         width: 100%;
         background: #121212;
         border: 1px solid #333;
@@ -575,15 +565,8 @@
         box-sizing: border-box;
     }
 
-    .dialog-body textarea:focus {
+    textarea:focus {
         border-color: #6366f1;
-    }
-
-    .dialog-footer {
-        display: flex;
-        justify-content: flex-end;
-        gap: 8px;
-        padding: 0 24px 20px;
     }
 
     .btn-cancel {

@@ -17,6 +17,14 @@
         Image,
     } from "lucide-svelte";
     import { showToast } from "../lib/stores/ui.js";
+    import { formatFileSize } from "../lib/format.js";
+    import {
+        STATUS_LABELS,
+        CATEGORY_OPTIONS,
+        CATEGORY_LABELS,
+        DEFAULT_TAG_COLOR,
+    } from "../lib/constants.js";
+    import { debounce } from "../lib/utils.js";
 
     export let id;
     let resource = null;
@@ -32,7 +40,7 @@
     // 标签管理
     let allTags = [];
     let newTagName = "";
-    let newTagColor = "#6366f1";
+    let newTagColor = DEFAULT_TAG_COLOR;
     let showTagInput = false;
 
     // TMDB 元数据
@@ -123,7 +131,10 @@
 
         for (const item of items) {
             // Electron 中剪贴板图片的 type 可能是 "image/png" 或空字符串
-            if (item.kind === "file" && (item.type.startsWith("image/") || item.type === "")) {
+            if (
+                item.kind === "file" &&
+                (item.type.startsWith("image/") || item.type === "")
+            ) {
                 const blob = item.getAsFile();
                 if (!blob) continue;
 
@@ -131,13 +142,15 @@
                 e.stopPropagation();
 
                 // 直接上传（已有 resource ID）
-                api.uploadScreenshot(id, blob).then(async () => {
-                    resource = await api.getResource(id);
-                    showToast({ type: "info", message: "截图已上传" });
-                }).catch(err => {
-                    console.error("Screenshot upload error:", err);
-                    showToast({ type: "error", message: "截图上传失败" });
-                });
+                api.uploadScreenshot(id, blob)
+                    .then(async () => {
+                        resource = await api.getResource(id);
+                        showToast({ type: "info", message: "截图已上传" });
+                    })
+                    .catch((err) => {
+                        console.error("Screenshot upload error:", err);
+                        showToast({ type: "error", message: "截图上传失败" });
+                    });
                 break;
             }
         }
@@ -194,17 +207,21 @@
         try {
             tmdbResult = await api.tmdbMatch(id);
         } catch (err) {
-            showToast({ type: "error", message: "TMDB匹配失败: " + err.message });
+            showToast({
+                type: "error",
+                message: "TMDB匹配失败: " + err.message,
+            });
         }
         tmdbSearching = false;
     }
 
-    let tmdbSearchTimer;
-    function onTmdbSearchInput() {
-        clearTimeout(tmdbSearchTimer);
-        if (!tmdbQuery.trim()) { tmdbSearchResults = []; return; }
-        tmdbSearchTimer = setTimeout(searchTMDB, 400);
-    }
+    const onTmdbSearchInput = debounce(() => {
+        if (!tmdbQuery.trim()) {
+            tmdbSearchResults = [];
+            return;
+        }
+        searchTMDB();
+    }, 400);
 
     async function searchTMDB() {
         if (!tmdbQuery.trim()) return;
@@ -212,7 +229,9 @@
         try {
             const res = await api.tmdbSearch(tmdbQuery);
             tmdbSearchResults = res.results || [];
-        } catch { tmdbSearchResults = []; }
+        } catch {
+            tmdbSearchResults = [];
+        }
         tmdbSearchResultsLoading = false;
     }
 
@@ -220,10 +239,17 @@
         tmdbResult = {
             title: item.title || item.name,
             originalTitle: item.original_title || item.original_name,
-            year: (item.release_date || item.first_air_date || '').substring(0, 4),
+            year: (item.release_date || item.first_air_date || "").substring(
+                0,
+                4,
+            ),
             overview: item.overview,
-            posterUrl: item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : null,
-            backdropUrl: item.backdrop_path ? `https://image.tmdb.org/t/p/w500${item.backdrop_path}` : null,
+            posterUrl: item.poster_path
+                ? `https://image.tmdb.org/t/p/w500${item.poster_path}`
+                : null,
+            backdropUrl: item.backdrop_path
+                ? `https://image.tmdb.org/t/p/w500${item.backdrop_path}`
+                : null,
             rating: item.vote_average,
             genres: [],
             mediaType: item.media_type,
@@ -239,7 +265,8 @@
             const update = {};
             if (tmdbResult.title) update.title = tmdbResult.title;
             if (tmdbResult.overview) update.description = tmdbResult.overview;
-            if (tmdbResult.rating) update.rating = Math.round(tmdbResult.rating / 2); // TMDB 10分制 -> 5分制
+            if (tmdbResult.rating)
+                update.rating = Math.round(tmdbResult.rating / 2); // TMDB 10分制 -> 5分制
             await api.updateResource(id, update);
             resource = await api.getResource(id);
             showToast({ type: "info", message: "TMDB元数据已应用" });
@@ -250,24 +277,8 @@
     }
 
     // 当前资源已关联的 tag ids
-    $: resourceTagIds = new Set((resource?.tags || []).map(t => t.id));
-    $: availableTags = allTags.filter(t => !resourceTagIds.has(t.id));
-
-    function formatSize(bytes) {
-        if (!bytes) return "0 B";
-        const units = ["B", "KB", "MB", "GB", "TB"];
-        let i = 0;
-        let size = bytes;
-        while (size >= 1024 && i < units.length - 1) {
-            size /= 1024;
-            i++;
-        }
-        return `${size.toFixed(1)} ${units[i]}`;
-    }
-
-    const statusLabels = { draft: "待完善", active: "已入库", downloaded: "已下载" };
-    const categoryOptions = ["", "movie", "tv", "anime", "music", "game", "software", "book", "other"];
-    const categoryLabels = { "": "未分类", movie: "电影", tv: "电视剧", anime: "动画", music: "音乐", game: "游戏", software: "软件", book: "书籍", other: "其他" };
+    $: resourceTagIds = new Set((resource?.tags || []).map((t) => t.id));
+    $: availableTags = allTags.filter((t) => !resourceTagIds.has(t.id));
 </script>
 
 {#if loading}
@@ -294,20 +305,25 @@
                     <span class="separator">·</span>
                     {#if editing}
                         <select bind:value={editStatus} class="inline-select">
-                            {#each Object.entries(statusLabels) as [val, label]}
+                            {#each Object.entries(STATUS_LABELS) as [val, label]}
                                 <option value={val}>{label}</option>
                             {/each}
                         </select>
                         <span class="separator">·</span>
                         <select bind:value={editCategory} class="inline-select">
-                            {#each categoryOptions as cat}
-                                <option value={cat}>{categoryLabels[cat]}</option>
+                            {#each CATEGORY_OPTIONS as cat}
+                                <option value={cat}
+                                    >{CATEGORY_LABELS[cat]}</option
+                                >
                             {/each}
                         </select>
                     {:else}
                         <span>{resource.category || "未分类"}</span>
                         <span class="separator">·</span>
-                        <span class={`status ${resource.status}`}>{statusLabels[resource.status] || resource.status}</span>
+                        <span class={`status ${resource.status}`}
+                            >{STATUS_LABELS[resource.status] ||
+                                resource.status}</span
+                        >
                     {/if}
                 </div>
             </div>
@@ -324,7 +340,9 @@
                         class="btn btn-secondary">取消</button
                     >
                 {:else}
-                    <button on:click={startEditing} class="btn btn-secondary">编辑</button>
+                    <button on:click={startEditing} class="btn btn-secondary"
+                        >编辑</button
+                    >
                 {/if}
                 <button on:click={handleDelete} class="btn btn-danger"
                     ><Trash2 size={16} /></button
@@ -391,7 +409,11 @@
                 <!-- 截图 -->
                 <section class="section">
                     <h3>截图 ({resource.screenshots?.length || 0})</h3>
-                    <div class="screenshot-upload" class:has-shots={(resource.screenshots?.length || 0) > 0}>
+                    <div
+                        class="screenshot-upload"
+                        class:has-shots={(resource.screenshots?.length || 0) >
+                            0}
+                    >
                         {#if (resource.screenshots?.length || 0) === 0}
                             <Image size={16} />
                             <span>在此页面任意位置 Ctrl+V 粘贴截图</span>
@@ -404,10 +426,7 @@
                         {#each resource.screenshots || [] as shot}
                             <div class="screenshot-item">
                                 <img
-                                    src={api.getScreenshotUrl(
-                                        id,
-                                        shot.id,
-                                    )}
+                                    src={api.getScreenshotUrl(id, shot.id)}
                                     alt=""
                                     loading="lazy"
                                 />
@@ -426,7 +445,11 @@
                                 style="background: {tag.color}22; color: {tag.color}; border-color: {tag.color}44;"
                             >
                                 {tag.name}
-                                <button class="tag-remove" on:click={() => removeTag(tag.id)} title="移除标签"><X size={10} /></button>
+                                <button
+                                    class="tag-remove"
+                                    on:click={() => removeTag(tag.id)}
+                                    title="移除标签"><X size={10} /></button
+                                >
                             </span>
                         {/each}
                         {#if (resource.tags || []).length === 0}
@@ -456,13 +479,34 @@
                     <!-- 新建标签 -->
                     {#if showTagInput}
                         <div class="new-tag-form">
-                            <input type="text" bind:value={newTagName} placeholder="标签名" class="tag-name-input" />
-                            <input type="color" bind:value={newTagColor} class="tag-color-input" />
-                            <button class="btn btn-sm btn-primary" on:click={createAndAddTag}>创建</button>
-                            <button class="btn btn-sm btn-secondary" on:click={() => { showTagInput = false; newTagName = ''; }}>取消</button>
+                            <input
+                                type="text"
+                                bind:value={newTagName}
+                                placeholder="标签名"
+                                class="tag-name-input"
+                            />
+                            <input
+                                type="color"
+                                bind:value={newTagColor}
+                                class="tag-color-input"
+                            />
+                            <button
+                                class="btn btn-sm btn-primary"
+                                on:click={createAndAddTag}>创建</button
+                            >
+                            <button
+                                class="btn btn-sm btn-secondary"
+                                on:click={() => {
+                                    showTagInput = false;
+                                    newTagName = "";
+                                }}>取消</button
+                            >
                         </div>
                     {:else}
-                        <button class="btn-new-tag" on:click={() => (showTagInput = true)}>
+                        <button
+                            class="btn-new-tag"
+                            on:click={() => (showTagInput = true)}
+                        >
                             <Plus size={12} /> 新建标签
                         </button>
                     {/if}
@@ -473,15 +517,23 @@
                     <section class="section">
                         <div class="section-header">
                             <h3>文件列表 ({resource.files.length})</h3>
-                            <button class="btn btn-sm btn-secondary" on:click={refreshFileCache} title="刷新文件缓存">
+                            <button
+                                class="btn btn-sm btn-secondary"
+                                on:click={refreshFileCache}
+                                title="刷新文件缓存"
+                            >
                                 <RefreshCw size={14} /> 刷新
                             </button>
                         </div>
                         <div class="file-list">
                             {#each resource.files as file}
                                 <div class="file-item">
-                                    <span class="file-path">{file.file_path}</span>
-                                    <span class="file-size">{formatSize(file.file_size)}</span>
+                                    <span class="file-path"
+                                        >{file.file_path}</span
+                                    >
+                                    <span class="file-size"
+                                        >{formatFileSize(file.file_size)}</span
+                                    >
                                 </div>
                             {/each}
                         </div>
@@ -499,20 +551,37 @@
                     {#if tmdbResult}
                         <div class="tmdb-result">
                             {#if tmdbResult.posterUrl}
-                                <img src={tmdbResult.posterUrl} alt={tmdbResult.title} class="tmdb-poster" />
+                                <img
+                                    src={tmdbResult.posterUrl}
+                                    alt={tmdbResult.title}
+                                    class="tmdb-poster"
+                                />
                             {/if}
                             <div class="tmdb-info">
                                 <h4>{tmdbResult.title}</h4>
                                 {#if tmdbResult.originalTitle && tmdbResult.originalTitle !== tmdbResult.title}
-                                    <p class="tmdb-original">{tmdbResult.originalTitle}</p>
+                                    <p class="tmdb-original">
+                                        {tmdbResult.originalTitle}
+                                    </p>
                                 {/if}
                                 <div class="tmdb-meta">
-                                    {#if tmdbResult.year}<span>{tmdbResult.year}</span>{/if}
-                                    {#if tmdbResult.mediaType}<span class="tmdb-type">{tmdbResult.mediaType === 'movie' ? '电影' : '电视剧'}</span>{/if}
-                                    {#if tmdbResult.rating}<span>⭐ {tmdbResult.rating}/10</span>{/if}
+                                    {#if tmdbResult.year}<span
+                                            >{tmdbResult.year}</span
+                                        >{/if}
+                                    {#if tmdbResult.mediaType}<span
+                                            class="tmdb-type"
+                                            >{tmdbResult.mediaType === "movie"
+                                                ? "电影"
+                                                : "电视剧"}</span
+                                        >{/if}
+                                    {#if tmdbResult.rating}<span
+                                            >⭐ {tmdbResult.rating}/10</span
+                                        >{/if}
                                 </div>
                                 {#if tmdbResult.overview}
-                                    <p class="tmdb-overview">{tmdbResult.overview}</p>
+                                    <p class="tmdb-overview">
+                                        {tmdbResult.overview}
+                                    </p>
                                 {/if}
                                 {#if tmdbResult.genres && tmdbResult.genres.length > 0}
                                     <div class="tmdb-genres">
@@ -521,19 +590,31 @@
                                         {/each}
                                     </div>
                                 {/if}
-                                <button class="btn btn-primary btn-sm" on:click={applyTMDB} disabled={tmdbApplying}>
-                                    {tmdbApplying ? "应用中..." : "应用元数据到资源"}
+                                <button
+                                    class="btn btn-primary btn-sm"
+                                    on:click={applyTMDB}
+                                    disabled={tmdbApplying}
+                                >
+                                    {tmdbApplying
+                                        ? "应用中..."
+                                        : "应用元数据到资源"}
                                 </button>
                             </div>
                         </div>
                     {:else if tmdbSearching}
                         <p class="tmdb-hint">正在匹配...</p>
                     {:else}
-                        <p class="tmdb-hint">搜索 TMDB 获取影视海报、简介和评分</p>
+                        <p class="tmdb-hint">
+                            搜索 TMDB 获取影视海报、简介和评分
+                        </p>
                     {/if}
 
                     <!-- 自动匹配 -->
-                    <button class="btn btn-secondary btn-sm tmdb-btn" on:click={matchTMDB} disabled={tmdbSearching}>
+                    <button
+                        class="btn btn-secondary btn-sm tmdb-btn"
+                        on:click={matchTMDB}
+                        disabled={tmdbSearching}
+                    >
                         <SearchIcon size={12} /> 自动匹配
                     </button>
 
@@ -551,16 +632,37 @@
                         {:else if tmdbSearchResults.length > 0}
                             <div class="tmdb-search-results">
                                 {#each tmdbSearchResults.slice(0, 5) as item}
-                                    <button class="tmdb-search-item" on:click={() => selectTmdbResult(item)}>
+                                    <button
+                                        class="tmdb-search-item"
+                                        on:click={() => selectTmdbResult(item)}
+                                    >
                                         {#if item.poster_path}
-                                            <img src={`https://image.tmdb.org/t/p/w92${item.poster_path}`} alt="" class="tmdb-thumb" />
+                                            <img
+                                                src={`https://image.tmdb.org/t/p/w92${item.poster_path}`}
+                                                alt=""
+                                                class="tmdb-thumb"
+                                            />
                                         {:else}
-                                            <span class="tmdb-no-thumb"><Image size={20} /></span>
+                                            <span class="tmdb-no-thumb"
+                                                ><Image size={20} /></span
+                                            >
                                         {/if}
                                         <div class="tmdb-item-info">
-                                            <span class="tmdb-item-title">{item.title || item.name}</span>
-                                            <span class="tmdb-item-year">{(item.release_date || item.first_air_date || '').substring(0, 4)}</span>
-                                            <span class="tmdb-item-type">{item.media_type === 'movie' ? '🎬' : '📺'}</span>
+                                            <span class="tmdb-item-title"
+                                                >{item.title || item.name}</span
+                                            >
+                                            <span class="tmdb-item-year"
+                                                >{(
+                                                    item.release_date ||
+                                                    item.first_air_date ||
+                                                    ""
+                                                ).substring(0, 4)}</span
+                                            >
+                                            <span class="tmdb-item-type"
+                                                >{item.media_type === "movie"
+                                                    ? "🎬"
+                                                    : "📺"}</span
+                                            >
                                         </div>
                                     </button>
                                 {/each}
@@ -578,7 +680,7 @@
                                 >状态: {resource.download.download_status}</span
                             >
                             <span
-                                >大小: {formatSize(
+                                >大小: {formatFileSize(
                                     resource.download.total_size,
                                 )}</span
                             >
@@ -873,7 +975,9 @@
         cursor: pointer;
     }
 
-    .inline-select:focus { border-color: #6366f1; }
+    .inline-select:focus {
+        border-color: #6366f1;
+    }
 
     .tag-remove {
         background: none;
@@ -885,7 +989,9 @@
         display: inline-flex;
     }
 
-    .tag-remove:hover { opacity: 1; }
+    .tag-remove:hover {
+        opacity: 1;
+    }
 
     .add-tag-section {
         margin-top: 10px;
@@ -912,9 +1018,14 @@
         transition: opacity 0.15s;
     }
 
-    .tag-addable:hover { opacity: 0.7; }
+    .tag-addable:hover {
+        opacity: 0.7;
+    }
 
-    .no-tags { font-size: 12px; color: #555; }
+    .no-tags {
+        font-size: 12px;
+        color: #555;
+    }
 
     .new-tag-form {
         display: flex;
@@ -934,7 +1045,9 @@
         outline: none;
     }
 
-    .tag-name-input:focus { border-color: #6366f1; }
+    .tag-name-input:focus {
+        border-color: #6366f1;
+    }
 
     .tag-color-input {
         width: 32px;
@@ -960,7 +1073,10 @@
         margin-top: 10px;
     }
 
-    .btn-new-tag:hover { border-color: #6366f1; color: #6366f1; }
+    .btn-new-tag:hover {
+        border-color: #6366f1;
+        color: #6366f1;
+    }
 
     .btn-sm {
         padding: 5px 12px;
@@ -976,64 +1092,185 @@
         justify-content: space-between;
     }
 
-    .section-header h3 { margin-bottom: 0; }
+    .section-header h3 {
+        margin-bottom: 0;
+    }
 
-    .btn { display: inline-flex; align-items: center; gap: 6px; }
+    .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+    }
 
-    .btn-primary { background: #6366f1; color: white; }
-    .btn-primary:hover { background: #5558e6; }
-    .btn-secondary { background: #2a2a2a; color: #aaa; }
-    .btn-secondary:hover { background: #3a3a3a; color: #fff; }
+    .btn-primary {
+        background: #6366f1;
+        color: white;
+    }
+    .btn-primary:hover {
+        background: #5558e6;
+    }
+    .btn-secondary {
+        background: #2a2a2a;
+        color: #aaa;
+    }
+    .btn-secondary:hover {
+        background: #3a3a3a;
+        color: #fff;
+    }
 
     /* TMDB */
     .tmdb-result {
-        display: flex; gap: 12px; margin-bottom: 12px;
+        display: flex;
+        gap: 12px;
+        margin-bottom: 12px;
     }
     .tmdb-poster {
-        width: 80px; height: 120px; border-radius: 6px; object-fit: cover; flex-shrink: 0;
+        width: 80px;
+        height: 120px;
+        border-radius: 6px;
+        object-fit: cover;
+        flex-shrink: 0;
         background: #1a1a1a;
     }
-    .tmdb-info { flex: 1; min-width: 0; }
-    .tmdb-info h4 { font-size: 14px; color: #e0e0e0; margin-bottom: 2px; }
-    .tmdb-original { font-size: 11px; color: #555; margin-bottom: 4px; }
-    .tmdb-meta { display: flex; gap: 8px; font-size: 11px; color: #666; margin-bottom: 6px; flex-wrap: wrap; }
-    .tmdb-type { background: #2a2a2a; padding: 0 6px; border-radius: 3px; font-size: 10px; }
+    .tmdb-info {
+        flex: 1;
+        min-width: 0;
+    }
+    .tmdb-info h4 {
+        font-size: 14px;
+        color: #e0e0e0;
+        margin-bottom: 2px;
+    }
+    .tmdb-original {
+        font-size: 11px;
+        color: #555;
+        margin-bottom: 4px;
+    }
+    .tmdb-meta {
+        display: flex;
+        gap: 8px;
+        font-size: 11px;
+        color: #666;
+        margin-bottom: 6px;
+        flex-wrap: wrap;
+    }
+    .tmdb-type {
+        background: #2a2a2a;
+        padding: 0 6px;
+        border-radius: 3px;
+        font-size: 10px;
+    }
     .tmdb-overview {
-        font-size: 12px; color: #888; line-height: 1.5;
-        display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; overflow: hidden;
+        font-size: 12px;
+        color: #888;
+        line-height: 1.5;
+        display: -webkit-box;
+        -webkit-line-clamp: 5;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
         margin-bottom: 8px;
     }
-    .tmdb-genres { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 8px; }
+    .tmdb-genres {
+        display: flex;
+        gap: 4px;
+        flex-wrap: wrap;
+        margin-bottom: 8px;
+    }
     .tmdb-genre {
-        font-size: 10px; color: #6366f1; background: #6366f122;
-        padding: 1px 8px; border-radius: 10px;
+        font-size: 10px;
+        color: #6366f1;
+        background: #6366f122;
+        padding: 1px 8px;
+        border-radius: 10px;
     }
-    .tmdb-hint { font-size: 12px; color: #555; padding: 4px 0; }
-    .tmdb-btn { margin-top: 8px; font-size: 12px; padding: 6px 12px; }
-    .btn-sm { padding: 6px 14px !important; font-size: 12px !important; }
-    .tmdb-manual { margin-top: 10px; }
+    .tmdb-hint {
+        font-size: 12px;
+        color: #555;
+        padding: 4px 0;
+    }
+    .tmdb-btn {
+        margin-top: 8px;
+        font-size: 12px;
+        padding: 6px 12px;
+    }
+    .btn-sm {
+        padding: 6px 14px !important;
+        font-size: 12px !important;
+    }
+    .tmdb-manual {
+        margin-top: 10px;
+    }
     .tmdb-search-input {
-        width: 100%; background: #1a1a1a; border: 1px solid #333; color: #e0e0e0;
-        padding: 6px 10px; border-radius: 6px; font-size: 12px; outline: none;
+        width: 100%;
+        background: #1a1a1a;
+        border: 1px solid #333;
+        color: #e0e0e0;
+        padding: 6px 10px;
+        border-radius: 6px;
+        font-size: 12px;
+        outline: none;
     }
-    .tmdb-search-input:focus { border-color: #6366f1; }
+    .tmdb-search-input:focus {
+        border-color: #6366f1;
+    }
     .tmdb-search-results {
-        margin-top: 6px; display: flex; flex-direction: column; gap: 2px;
-        max-height: 240px; overflow-y: auto;
+        margin-top: 6px;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        max-height: 240px;
+        overflow-y: auto;
     }
     .tmdb-search-item {
-        display: flex; gap: 8px; align-items: center;
-        background: #1a1a1a; border: none; color: #aaa; padding: 6px 8px;
-        border-radius: 6px; cursor: pointer; text-align: left; width: 100%;
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        background: #1a1a1a;
+        border: none;
+        color: #aaa;
+        padding: 6px 8px;
+        border-radius: 6px;
+        cursor: pointer;
+        text-align: left;
+        width: 100%;
     }
-    .tmdb-search-item:hover { background: #2a2a2a; color: #fff; }
-    .tmdb-thumb { width: 32px; height: 48px; border-radius: 3px; object-fit: cover; }
+    .tmdb-search-item:hover {
+        background: #2a2a2a;
+        color: #fff;
+    }
+    .tmdb-thumb {
+        width: 32px;
+        height: 48px;
+        border-radius: 3px;
+        object-fit: cover;
+    }
     .tmdb-no-thumb {
-        width: 32px; height: 48px; border-radius: 3px; background: #222;
-        display: flex; align-items: center; justify-content: center; color: #444;
+        width: 32px;
+        height: 48px;
+        border-radius: 3px;
+        background: #222;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #444;
     }
-    .tmdb-item-info { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
-    .tmdb-item-title { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .tmdb-item-year { font-size: 10px; color: #666; }
-    .tmdb-item-type { font-size: 10px; }
+    .tmdb-item-info {
+        display: flex;
+        flex-direction: column;
+        gap: 1px;
+        min-width: 0;
+    }
+    .tmdb-item-title {
+        font-size: 12px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .tmdb-item-year {
+        font-size: 10px;
+        color: #666;
+    }
+    .tmdb-item-type {
+        font-size: 10px;
+    }
 </style>

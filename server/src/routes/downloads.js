@@ -1,11 +1,11 @@
 import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { getDb } from '../database/connection.js';
-import writeQueue from '../database/write-queue.js';
-import { dbWrite } from '../database/helpers.js';
+import { dbWrite, dbWriteTransaction } from '../database/helpers.js';
 import qbClient from '../services/qbittorrent.js';
 import torrentParser from '../services/torrent-parser.js';
 import diskChecker from '../services/disk-check.js';
+import { cacheFilesFromTorrent } from '../services/file-cache.js';
 
 const router = Router();
 
@@ -142,9 +142,7 @@ router.patch('/:id', async (req, res) => {
     setClauses.push('completed_at = datetime(\'now\')');
   }
 
-  await writeQueue.enqueue(() => {
-    db.prepare(`UPDATE download SET ${setClauses.join(', ')} WHERE id = @id`).run(updates);
-  });
+  await dbWrite(`UPDATE download SET ${setClauses.join(', ')} WHERE id = @id`, updates);
 
   // 下载完成时自动缓存文件列表
   if (req.body.download_status === 'completed') {
@@ -152,17 +150,7 @@ router.patch('/:id', async (req, res) => {
     if (resource?.torrent_blob) {
       const parsed = torrentParser.parse(resource.torrent_blob);
       if (parsed) {
-        await writeQueue.enqueue(() => {
-          const db2 = getDb();
-          db2.prepare('DELETE FROM file_cache WHERE resource_id = ?').run(download.resource_id);
-          const insert = db2.prepare(`
-            INSERT INTO file_cache (id, resource_id, file_path, file_size, file_index)
-            VALUES (?, ?, ?, ?, ?)
-          `);
-          for (const file of parsed.files) {
-            insert.run(uuidv4(), download.resource_id, file.path, file.size, file.index);
-          }
-        });
+        cacheFilesFromTorrent(download.resource_id, parsed);
       }
     }
   }

@@ -8,19 +8,15 @@
         MoreVertical,
     } from "lucide-svelte";
     import { createEventDispatcher } from "svelte";
+    import { formatDate } from "../lib/format.js";
+    import { STATUS_LABELS } from "../lib/constants.js";
 
     export let resource;
     export let mode = "list";
 
     const dispatch = createEventDispatcher();
 
-    $: statusLabel =
-        {
-            draft: "待完善",
-            active: "已入库",
-            downloaded: "已下载",
-            deleted: "已删除",
-        }[resource.status] || resource.status;
+    $: statusLabel = STATUS_LABELS[resource.status] || resource.status;
 
     $: statusClass = resource.status;
 
@@ -28,17 +24,6 @@
         resource.screenshot_count > 0 && resource.first_screenshot_id
             ? api.getScreenshotUrl(resource.id, resource.first_screenshot_id)
             : null;
-
-    function formatDate(dateStr) {
-        if (!dateStr) return "";
-        const d = new Date(dateStr);
-        return d.toLocaleDateString("zh-CN", {
-            month: "short",
-            day: "numeric",
-            hour: "2-digit",
-            minute: "2-digit",
-        });
-    }
 
     function starArray(rating) {
         return Array.from({ length: 5 }, (_, i) => i < rating);
