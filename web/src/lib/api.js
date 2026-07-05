@@ -280,7 +280,7 @@ export const api = {
     `${API_BASE}/export?include_screenshots=${includeScreenshots}`,
 
   importData: async (file, mode = 'merge') => {
-    const res = await fetch(`${API_BASE}/import?mode=${mode}`, {
+    const res = await fetch(`${API_BASE}/export?mode=${mode}`, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${getToken()}` },
       body: file,
