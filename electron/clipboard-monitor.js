@@ -3,7 +3,7 @@ const { exec } = require('child_process');
 
 // 链接匹配正则（与 server/src/lib/constants.js BTIH_PATTERNS 保持同步）
 const PATTERNS = {
-  magnet: /magnet:\?xt=urn:btih:[a-zA-Z0-9]{32,}/gi,
+  magnet: /magnet:\?xt=urn:btih:(?:[a-fA-F0-9]{40}|[A-Z2-7]{32})(?=&|\r|\n|$)(?:&[a-zA-Z]+=[^&\r\n]+)*/gi,
   torrentUrl: /https?:\/\/[^\s"'<>]+\.torrent/gi,
   ed2k: /ed2k:\/\/\|file\|[^|]+\|[a-fA-F0-9]{32}\|/gi,
   btihHash: /\b([a-fA-F0-9]{40})\b/g,
@@ -109,21 +109,23 @@ function extractLinks(text) {
         seenUri.add(uri);
         links.push({ type, uri });
         // 记录已出现的 BTIH hash，避免后续纯 hash 重复
-        const hashMatch = uri.match(/btih:([a-fA-F0-9]{40}|[A-Z2-7a-z2-7]{32})/i);
+        const hashMatch = uri.match(/btih:([a-fA-F0-9]{40}|[A-Z2-7]{32})/i);
         if (hashMatch) seenHash.add(hashMatch[1].toLowerCase());
       }
     }
   }
 
   // 提取截断磁链（hash&dn=xxx&xl=xxx），补全为完整 magnet URI
+  // 注意：跳过已被完整 magnet URI 覆盖的 hash，避免同一链接重复入库
   const truncatedMatches = text.matchAll(PATTERNS.truncatedMagnet);
   for (const match of truncatedMatches) {
+    const hash = match[1];
+    if (hash && seenHash.has(hash.toLowerCase())) continue;
     const uri = 'magnet:?xt=urn:btih:' + match[0];
     if (!seenUri.has(uri)) {
       seenUri.add(uri);
       links.push({ type: 'magnet', uri });
-      const hashMatch = uri.match(/btih:([a-fA-F0-9]{40}|[A-Z2-7a-z2-7]{32})/i);
-      if (hashMatch) seenHash.add(hashMatch[1].toLowerCase());
+      if (hash) seenHash.add(hash.toLowerCase());
     }
   }
 
@@ -146,6 +148,48 @@ function extractLinks(text) {
     if (!seenHash.has(lowerHash)) {
       seenHash.add(lowerHash);
       links.push({ type: 'magnet', uri: `magnet:?xt=urn:btih:${lowerHash}` });
+    }
+  }
+
+  // 干扰字符滤除：仅在没有找到结构化链接时才执行
+  // 如果已匹配到标准 magnet / torrent / ed2k 链接，说明来源正规，
+  // 跳过全局拼接扫描以避免从 URL 编码参数等残留文本中拼出假 hash
+  const hasStructuredLinks = links.some(l => l.type === 'magnet' || l.type === 'torrentUrl' || l.type === 'ed2k');
+  if (hasStructuredLinks) return links;
+
+  // 例如 "8C3DAB25中897A56F7B052F文3013AF删274671E掉4DF200" → 提取为有效 hash
+  let cleanedText = text;
+  // 移除已知的 magnet URI、截断磁链、纯hash，避免从 URI 元数据中拼出假hash
+  for (const r of links) {
+    // 从文本中移除已匹配的 URI（处理转义后做简单替换）
+    cleanedText = cleanedText.split(r.uri).join('');
+  }
+  // 额外移除任意 magnet:? 前缀残留
+  cleanedText = cleanedText.replace(PATTERNS.magnet, '');
+
+  const hexOnly = cleanedText.replace(/[^a-fA-F0-9]/g, '');
+  for (let i = 0; i <= hexOnly.length - 40; i++) {
+    const candidate = hexOnly.substring(i, i + 40);
+    if (/^[a-fA-F0-9]{40}$/.test(candidate)) {
+      const lower = candidate.toLowerCase();
+      if (!seenHash.has(lower)) {
+        seenHash.add(lower);
+        links.push({ type: 'magnet', uri: `magnet:?xt=urn:btih:${lower}` });
+      }
+      i += 39;
+    }
+  }
+
+  const base32Only = cleanedText.replace(/[^A-Z2-7a-z2-7]/gi, '');
+  for (let i = 0; i <= base32Only.length - 32; i++) {
+    const candidate = base32Only.substring(i, i + 32);
+    if (/^[A-Z2-7a-z2-7]{32}$/i.test(candidate)) {
+      const lower = candidate.toLowerCase();
+      if (!seenHash.has(lower)) {
+        seenHash.add(lower);
+        links.push({ type: 'magnet', uri: `magnet:?xt=urn:btih:${lower}` });
+      }
+      i += 31;
     }
   }
 
