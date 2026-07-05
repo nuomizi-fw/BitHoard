@@ -618,6 +618,18 @@ router.delete('/:id/screenshots/:screenshotId', async (req, res) => {
 });
 
 /**
+ * 删除视频
+ * DELETE /api/resources/:id/videos/:videoId
+ */
+router.delete('/:id/videos/:videoId', async (req, res) => {
+  const { id, videoId } = req.params;
+
+  await dbWrite('DELETE FROM video WHERE id = ? AND resource_id = ?', videoId, id);
+
+  res.json({ success: true });
+});
+
+/**
  * 缓存种子文件列表
  * POST /api/resources/:id/cache-files
  */

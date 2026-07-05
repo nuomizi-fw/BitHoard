@@ -161,6 +161,9 @@ export const api = {
     return url;
   },
 
+  deleteVideo: (resourceId, videoId) =>
+    requestJson(`/resources/${resourceId}/videos/${videoId}`, { method: 'DELETE' }),
+
   /**
    * 上传视频附件（支持进度回调）
    * @param {string} resourceId

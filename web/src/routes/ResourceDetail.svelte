@@ -209,6 +209,28 @@
         return new Blob([bytes], { type: mime });
     }
 
+    // 截图/视频删除操作
+    async function deleteScreenshot(screenshotId) {
+        try {
+            await api.deleteScreenshot(id, screenshotId);
+            resource = await api.getResource(id);
+            showToast({ type: "info", message: "截图已删除" });
+        } catch (err) {
+            showToast({ type: "error", message: "删除截图失败: " + err.message });
+        }
+    }
+
+    async function deleteVideo(videoId) {
+        if (!confirm("确定要删除该视频吗？")) return;
+        try {
+            await api.deleteVideo(id, videoId);
+            resource = await api.getResource(id);
+            showToast({ type: "info", message: "视频已删除" });
+        } catch (err) {
+            showToast({ type: "error", message: "删除视频失败: " + err.message });
+        }
+    }
+
     // 标签操作
     async function addTag(tagId) {
         try {
@@ -483,6 +505,13 @@
                                     alt=""
                                     loading="lazy"
                                 />
+                                <button
+                                    class="shot-remove"
+                                    on:click|stopPropagation={() => deleteScreenshot(shot.id)}
+                                    title="删除截图"
+                                >
+                                    <X size={12} />
+                                </button>
                             </div>
                         {/each}
                     </div>
@@ -515,6 +544,13 @@
                                 <div class="video-meta" style="padding: 4px 8px; font-size: 12px; color: #888;">
                                     {vid.file_name} · {formatFileSize(vid.file_size)}
                                 </div>
+                                <button
+                                    class="shot-remove"
+                                    on:click|stopPropagation={() => deleteVideo(vid.id)}
+                                    title="删除视频"
+                                >
+                                    <X size={12} />
+                                </button>
                             </div>
                         {/each}
                     </div>
@@ -975,6 +1011,7 @@
     }
 
     .screenshot-item {
+        position: relative;
         border-radius: 8px;
         overflow: hidden;
         background: #1a1a1a;
@@ -984,6 +1021,33 @@
         width: 100%;
         height: 150px;
         object-fit: cover;
+    }
+
+    .shot-remove {
+        position: absolute;
+        top: 4px;
+        right: 4px;
+        width: 22px;
+        height: 22px;
+        border-radius: 50%;
+        background: rgba(0, 0, 0, 0.7);
+        border: none;
+        color: #fff;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        opacity: 0;
+        transition: opacity 0.15s;
+        z-index: 2;
+    }
+
+    .screenshot-item:hover .shot-remove {
+        opacity: 1;
+    }
+
+    .shot-remove:hover {
+        background: rgba(220, 38, 38, 0.85);
     }
 
     .file-list {
