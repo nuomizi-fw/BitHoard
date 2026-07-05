@@ -2,6 +2,8 @@
  * 数据库写入队列
  * 将所有写操作排成串行队列，防止 SQLITE_BUSY
  */
+let _wqSeq = 0;
+
 class WriteQueue {
   constructor() {
     this.queue = [];
@@ -14,28 +16,38 @@ class WriteQueue {
    * @returns {Promise} 操作完成后的 Promise
    */
   enqueue(fn) {
+    const seq = ++_wqSeq;
+    console.log(`[write-queue] ENQUEUE #${seq}, pending=${this.queue.length}`);
     return new Promise((resolve, reject) => {
-      this.queue.push({ fn, resolve, reject });
+      this.queue.push({ fn, resolve, reject, seq });
       this.processQueue();
     });
   }
 
   async processQueue() {
-    if (this.processing) return;
+    if (this.processing) {
+      console.log(`[write-queue] processQueue SKIP (already processing), pending=${this.queue.length}`);
+      return;
+    }
     this.processing = true;
+    console.log(`[write-queue] processQueue START, tasks=${this.queue.length}`);
 
     while (this.queue.length > 0) {
-      const { fn, resolve, reject } = this.queue.shift();
+      const { fn, resolve, reject, seq } = this.queue.shift();
+      console.log(`[write-queue] EXEC #${seq}, remaining=${this.queue.length}`);
       try {
+        const t0 = Date.now();
         const result = await fn();
+        console.log(`[write-queue] #${seq} DONE ${Date.now() - t0}ms`);
         resolve(result);
       } catch (err) {
-        console.error('[write-queue] Error:', err.message);
+        console.error(`[write-queue] #${seq} ERROR:`, err.message);
         reject(err);
       }
     }
 
     this.processing = false;
+    console.log('[write-queue] processQueue DONE (empty)');
   }
 }
 

@@ -24,10 +24,30 @@ const app = express();
 expressWs(app);
 
 // ── 基础中间件 ──
+// 最顶层请求追踪（在所有中间件之前，排查请求是否到达 Express）
+app.use((req, res, next) => {
+  if (req.method === 'POST' || req.method === 'OPTIONS') {
+    console.log(`[server] >>> ${req.method} ${req.path} from ${req.ip}`);
+  }
+  next();
+});
 app.use(cors());
 app.use(morgan('dev'));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.raw({ type: 'image/*', limit: '20mb' }));
+
+// 请求体大小日志（排查大 body 阻塞）
+app.use('/api/resources', (req, res, next) => {
+  if (req.method === 'POST') {
+    try {
+      const bodyStr = JSON.stringify(req.body);
+      console.log(`[server] POST /api/resources body size=${bodyStr.length} chars, links=${req.body?.links?.length}`);
+    } catch (e) {
+      console.error('[server] POST /api/resources JSON.stringify failed:', e.message);
+    }
+  }
+  next();
+});
 
 // ── IP 白名单 ──
 app.use(ipWhitelistMiddleware);
@@ -68,6 +88,20 @@ if (fs.existsSync(webDistPath)) {
     }
   });
 }
+
+// ── 全局错误处理（防止 async 路由异常导致客户端永久挂起）──
+app.use((err, req, res, _next) => {
+  console.error('[server] UNHANDLED ERROR:', req.method, req.path);
+  console.error('[server]', err.stack || err.message);
+  if (res.headersSent) {
+    console.error('[server] headers already sent, cannot respond');
+    return;
+  }
+  res.status(err.status || 500).json({
+    error: err.message || 'Internal Server Error',
+    ...(process.env.NODE_ENV !== 'production' && { stack: err.stack }),
+  });
+});
 
 // ── WebSocket ──
 wsService.init(app);
