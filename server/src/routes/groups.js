@@ -2,7 +2,9 @@ import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { getDb } from '../database/connection.js';
 import { dbWrite, dbPatch, dbHardDelete } from '../database/helpers.js';
+import { createLogger } from '../lib/logger.js';
 
+const log = createLogger('routes-groups');
 const router = Router();
 
 /**

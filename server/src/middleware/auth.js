@@ -1,5 +1,8 @@
 import jwt from 'jsonwebtoken';
 import config from '../config.js';
+import { createLogger } from '../lib/logger.js';
+
+const log = createLogger('middleware-auth');
 
 /**
  * JWT 鉴权中间件
@@ -27,6 +30,7 @@ export function authMiddleware(req, res, next) {
   }
 
   if (!token) {
+    log.warn('Missing token from', req.ip, 'path:', req.path);
     return res.status(401).json({ error: 'Missing authorization token' });
   }
 
@@ -35,6 +39,7 @@ export function authMiddleware(req, res, next) {
     req.user = payload;
     next();
   } catch (err) {
+    log.warn('Invalid token from', req.ip, 'path:', req.path);
     return res.status(401).json({ error: 'Invalid or expired token' });
   }
 }

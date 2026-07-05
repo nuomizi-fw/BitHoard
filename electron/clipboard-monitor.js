@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const { createLogger } = require('./logger');
 
-const log = createLogger('clipboard-monitor');
+const log = createLogger('clipboard');
 
 // 默认链接匹配正则（运行时可通过 initClipboardMonitor 的 patterns 参数覆盖）
 const DEFAULT_PATTERNS = {

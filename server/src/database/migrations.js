@@ -4,7 +4,7 @@
  */
 import { createLogger } from '../lib/logger.js';
 
-const log = createLogger('db-migrations');
+const log = createLogger('db');
 
 const migrations = [
   {

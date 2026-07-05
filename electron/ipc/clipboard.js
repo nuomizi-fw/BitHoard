@@ -7,7 +7,7 @@ const fs = require('fs');
 const path = require('path');
 const { createLogger } = require('../logger');
 
-const log = createLogger('ipc-clipboard');
+const log = createLogger('clipboard');
 
 // ── videoLog 引用（由 clipboard-monitor 初始化后注入）──
 let _videoLog = null;

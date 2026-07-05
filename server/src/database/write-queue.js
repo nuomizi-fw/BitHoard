@@ -4,7 +4,7 @@
  */
 import { createLogger } from '../lib/logger.js';
 
-const log = createLogger('db-write-queue');
+const log = createLogger('db');
 
 let _wqSeq = 0;
 

@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import tmdbService from '../services/tmdb.js';
+import { createLogger } from '../lib/logger.js';
 
+const log = createLogger('routes-tmdb');
 const router = Router();
 
 /**
@@ -22,6 +24,7 @@ router.get('/search', async (req, res) => {
     const result = await tmdbService.searchMulti(q);
     res.json(result);
   } catch (err) {
+    log.error('TMDB search failed:', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -36,6 +39,7 @@ router.get('/movie/:id', async (req, res) => {
     if (!result) return res.status(404).json({ error: 'Not found' });
     res.json(result);
   } catch (err) {
+    log.error('TMDB getMovie failed:', req.params.id, err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -50,6 +54,7 @@ router.get('/tv/:id', async (req, res) => {
     if (!result) return res.status(404).json({ error: 'Not found' });
     res.json(result);
   } catch (err) {
+    log.error('TMDB getTV failed:', req.params.id, err);
     res.status(500).json({ error: err.message });
   }
 });

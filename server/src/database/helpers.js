@@ -2,7 +2,7 @@ import { getDb } from './connection.js';
 import writeQueue from './write-queue.js';
 import { createLogger } from '../lib/logger.js';
 
-const log = createLogger('db-helpers');
+const log = createLogger('db');
 
 /**
  * 数据库写操作便捷工具

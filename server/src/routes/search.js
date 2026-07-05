@@ -1,7 +1,9 @@
 import { Router } from 'express';
 import { getDb } from '../database/connection.js';
 import { buildResourceWhereClause, buildOrderClause, SCREENSHOT_SUBQUERY } from '../lib/query-builder.js';
+import { createLogger } from '../lib/logger.js';
 
+const log = createLogger('routes-search');
 const router = Router();
 
 /**

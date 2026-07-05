@@ -4,7 +4,9 @@ import torrentParser from '../services/torrent-parser.js';
 import { getDb } from '../database/connection.js';
 import { dbWrite } from '../database/helpers.js';
 import { cacheFilesFromQbittorrent } from '../services/file-cache.js';
+import { createLogger } from '../lib/logger.js';
 
+const log = createLogger('routes-qbittorrent');
 const router = Router();
 
 /**
@@ -25,6 +27,7 @@ router.get('/torrents', async (req, res) => {
     const torrents = await qbClient.getTorrents();
     res.json(torrents);
   } catch (err) {
+    log.error('Failed to get torrents:', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -38,6 +41,7 @@ router.get('/torrents/:hash/files', async (req, res) => {
     const files = await qbClient.getTorrentFiles(req.params.hash);
     res.json(files);
   } catch (err) {
+    log.error('Failed to get torrent files:', req.params.hash, err);
     res.status(500).json({ error: err.message });
   }
 });

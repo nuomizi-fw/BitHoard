@@ -5,7 +5,7 @@ import config from '../config.js';
 import { runMigrations } from './migrations.js';
 import { createLogger } from '../lib/logger.js';
 
-const log = createLogger('db-connection');
+const log = createLogger('db');
 
 let db = null;
 

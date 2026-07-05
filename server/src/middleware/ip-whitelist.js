@@ -1,4 +1,7 @@
 import config from '../config.js';
+import { createLogger } from '../lib/logger.js';
+
+const log = createLogger('middleware-ip-whitelist');
 
 /**
  * 判断是否为本地回环地址
@@ -35,10 +38,12 @@ export function ipWhitelistMiddleware(req, res, next) {
   // 检查白名单
   const whitelist = config.ipWhitelist;
   if (whitelist.length === 0) {
+    log.warn('Remote access blocked (empty whitelist):', clientIp, req.method, req.path);
     return res.status(403).json({ error: 'Remote access disabled' });
   }
 
   if (!isIpAllowed(clientIp, whitelist)) {
+    log.warn('IP not in whitelist:', clientIp, req.method, req.path);
     return res.status(403).json({ error: `IP ${clientIp} not in whitelist` });
   }
 

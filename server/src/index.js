@@ -2,12 +2,13 @@ import express from 'express';
 import cors from 'cors';
 import morgan from 'morgan';
 import expressWs from 'express-ws';
+import crypto from 'crypto';
 import config from './config.js';
 import { getDb, closeDb } from './database/connection.js';
 import { authMiddleware } from './middleware/auth.js';
 import { ipWhitelistMiddleware } from './middleware/ip-whitelist.js';
 import wsService from './websocket/index.js';
-import { createLogger, closeAllLoggers } from './lib/logger.js';
+import { createLogger, closeAllLoggers, runWithRequestId } from './lib/logger.js';
 
 const log = createLogger('server');
 
@@ -27,11 +28,17 @@ const app = express();
 expressWs(app);
 
 // ── 基础中间件 ──
-// 最顶层请求追踪（在所有中间件之前，排查请求是否到达 Express）
+// requestId：最顶层生成并注入 AsyncLocalStorage，整条请求链路的日志自动带上
 app.use((req, res, next) => {
-  if (req.method === 'POST' || req.method === 'OPTIONS') {
-    log('>>>', req.method, req.path, 'from', req.ip);
-  }
+  const requestId = crypto.randomUUID().slice(0, 8);
+  req.requestId = requestId;
+  res.setHeader('X-Request-Id', requestId);
+  runWithRequestId(requestId, next);
+});
+
+// 请求追踪（排查请求是否到达 Express）
+app.use((req, res, next) => {
+  log(req.method, req.path, 'from', req.ip);
   next();
 });
 app.use(cors());

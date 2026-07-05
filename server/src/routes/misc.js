@@ -1,7 +1,9 @@
 import { Router } from 'express';
 import { getDb } from '../database/connection.js';
 import config from '../config.js';
+import { createLogger } from '../lib/logger.js';
 
+const log = createLogger('routes-misc');
 const router = Router();
 
 /**
