@@ -24,19 +24,23 @@
     }
 
     async function confirmItem(res, idx) {
+        console.log('[StagingArea] confirmItem idx=', idx, 'uri=', res.magnet_uri?.substring(0, 60));
         try {
             // 暂存区单项确认：有 contextText 时不传 suggestedTitle，
             // 让服务端 extractCandidateTitle 从上下文中按 hash 定位逐条解析标题
             const hasContext = !!(res.context_text && res.context_text.trim());
+            console.log('[StagingArea] confirmItem hasContext=', hasContext, 'contextText len=', res.context_text?.length || 0);
             const result = await api.createResources({
                 links: [{ uri: res.magnet_uri, type: "magnet" }],
                 sourceApp: res.source_app || "暂存录入",
                 contextText: res.context_text || "",
                 suggestedTitle: hasContext ? undefined : (res.suggested_title || res.title || undefined),
             });
+            console.log('[StagingArea] confirmItem api.createResources returned, results=', result.results?.length);
             // 自动激活 + 上传截图
             for (const r of result.results) {
                 if (r.created) {
+                    console.log('[StagingArea] confirmItem updating status for', r.id);
                     await api.updateResource(r.id, { status: "active" });
                     await uploadStagingScreenshots(r.id, res);
                 }
@@ -46,6 +50,7 @@
             resources.refresh();
             showToast({ type: "success", message: `"${res.title || res.magnet_uri?.substring(0, 40)}" 已入库` });
         } catch (err) {
+            console.error('[StagingArea] confirmItem ERROR:', err.message, err.stack);
             showToast({ type: "error", message: "入库失败: " + err.message });
         }
     }
@@ -58,12 +63,12 @@
         confirming = true;
         const items = [];
         stagingResources.subscribe(v => items.push(...v))();
+        console.log('[StagingArea] confirmAll START, total items=', items.length);
         let done = 0;
         for (let i = items.length - 1; i >= 0; i--) {
             try {
                 const res = items[i];
-                // 暂存区单项确认：有 contextText 时不传 suggestedTitle，
-                // 让服务端 extractCandidateTitle 从上下文中按 hash 定位逐条解析标题
+                console.log(`[StagingArea] confirmAll item[${i}]: uri=${res.magnet_uri?.substring(0, 60)}, ctxLen=${res.context_text?.length || 0}`);
                 const hasContext = !!(res.context_text && res.context_text.trim());
                 const result = await api.createResources({
                     links: [{ uri: res.magnet_uri, type: "magnet" }],
@@ -71,6 +76,7 @@
                     contextText: res.context_text || "",
                     suggestedTitle: hasContext ? undefined : (res.suggested_title || res.title || undefined),
                 });
+                console.log(`[StagingArea] confirmAll item[${i}]: createResources done`);
                 for (const r of result.results) {
                     if (r.created) {
                         await api.updateResource(r.id, { status: "active" });
@@ -79,12 +85,14 @@
                 }
                 stagingResources.update(arr => arr.filter((_, j) => j !== i));
                 done++;
+                console.log(`[StagingArea] confirmAll item[${i}]: fully done (${done}/${items.length})`);
             } catch (err) {
-                // skip failed
+                console.error(`[StagingArea] confirmAll item[${i}] ERROR:`, err.message);
             }
         }
         confirming = false;
         resources.refresh();
+        console.log('[StagingArea] confirmAll ALL DONE, done=', done);
         showToast({ type: "success", message: `已入库 ${done} 个资源` });
     }
 

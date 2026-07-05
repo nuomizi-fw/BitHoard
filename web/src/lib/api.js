@@ -36,13 +36,36 @@ async function request(endpoint, options = {}) {
   if (options.body && !isBinary && !(options.body instanceof FormData) && typeof options.body !== 'string') {
     headers['Content-Type'] = 'application/json';
     options.body = JSON.stringify(options.body);
+    console.log('[api] request body json-stringified, len=', options.body.length);
   }
 
   if (authToken) {
     headers['Authorization'] = `Bearer ${authToken}`;
   }
 
-  const res = await fetch(`${API_BASE}${endpoint}`, { ...options, headers });
+  const url = `${API_BASE}${endpoint}`;
+  const method = options.method || 'GET';
+  console.log('[api] fetch START', method, url, 'bodyLen=', options.body?.length || 0);
+
+  // 30s 超时，防止服务端无响应时 fetch 永久挂起
+  const abortCtrl = new AbortController();
+  const timeoutId = setTimeout(() => abortCtrl.abort(), 30_000);
+
+  const t0 = performance.now();
+  let res;
+  try {
+    res = await fetch(url, { ...options, headers, signal: abortCtrl.signal });
+    clearTimeout(timeoutId);
+    console.log('[api] fetch DONE', res.status, 'in', (performance.now() - t0).toFixed(0), 'ms');
+  } catch (err) {
+    clearTimeout(timeoutId);
+    if (err.name === 'AbortError') {
+      console.error('[api] fetch TIMEOUT after 30s for', method, url);
+      throw new Error(`请求超时: ${method} ${url} (30s)`);
+    }
+    console.error('[api] fetch ERROR', method, url, ':', err.message);
+    throw err;
+  }
 
   if (res.status === 401) {
     clearToken();
@@ -58,7 +81,10 @@ async function request(endpoint, options = {}) {
  */
 async function requestJson(endpoint, options = {}) {
   const res = await request(endpoint, options);
-  return res.json();
+  console.log(`[api] requestJson ${endpoint} status=${res.status}`);
+  const json = await res.json();
+  console.log(`[api] requestJson ${endpoint} json parsed ok`);
+  return json;
 }
 
 /**
@@ -87,8 +113,17 @@ export const api = {
   getResource: (id) =>
     requestJson(`/resources/${id}`),
 
-  createResources: (data) =>
-    requestJson('/resources', { method: 'POST', body: data }),
+  createResources: (data) => {
+    console.log('[api] createResources START, links=', data.links?.length, 'ctxLen=', data.contextText?.length || 0);
+    const t0 = performance.now();
+    return requestJson('/resources', { method: 'POST', body: data }).then(r => {
+      console.log('[api] createResources DONE in', (performance.now() - t0).toFixed(0), 'ms, results=', r.results?.length);
+      return r;
+    }).catch(err => {
+      console.error('[api] createResources FAILED:', err.message);
+      throw err;
+    });
+  },
 
   importTorrent: (data) =>
     requestJson('/resources/import-torrent', { method: 'POST', body: data }),

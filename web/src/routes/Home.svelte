@@ -117,7 +117,7 @@
             return;
         }
 
-        // 推入暂存区
+        // 推入暂存区（多链接时只传 pasteText 让服务端逐条解析，不重复存完整文本）
         stagingResources.update((items) => [
             ...items,
             ...links.map((l) => ({
@@ -125,6 +125,8 @@
                 source_app: "手动录入",
                 title: "",
                 status: "draft",
+                // 多链接时传完整上下文供服务端 extractCandidateTitle 逐条解析；
+                // 单链接时也传完整上下文，服务端会按 hash 截取精确片段存入 raw_context
                 context_text: pasteText,
                 _ts: Date.now(),
             })),
