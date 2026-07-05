@@ -1,4 +1,4 @@
-const { app, ipcMain, clipboard, dialog } = require('electron');
+const { app, ipcMain, clipboard, dialog, Notification } = require('electron');
 const path = require('path');
 const { createWindow } = require('./window');
 const { createTray, destroyTray } = require('./tray');
@@ -36,96 +36,128 @@ async function startServer() {
   return serverModule.startServer();
 }
 
-// ── 注册 IPC 处理器 ──
-registerClipboardIpc();
-registerFileDroppedIpc();
-registerAppInfoIpc();
+// ── 单实例锁：防止多开导致端口 13002 冲突 ──
+const gotTheLock = app.requestSingleInstanceLock();
 
-app.whenReady().then(async () => {
-  // 动态加载共享常量（BTIH 匹配模式），传递给 clipboard-monitor 以保持同步
-  let btihPatterns = null;
-  try {
-    const constants = await import('../server/src/lib/constants.js');
-    btihPatterns = constants.BTIH_PATTERNS;
-  } catch (err) {
-    log('Failed to load BTIH_PATTERNS, clipboard-monitor will use defaults:', err.message);
-  }
-
-  // ── 生产模式：嵌入启动后端服务器 ──
-  // 开发模式下由 pnpm dev:server 单独启动，避免端口冲突
-  if (!isDev) {
-    log('Starting backend server...');
-    try {
-      serverInstance = await startServer();
-      log('Server ready');
-    } catch (err) {
-      log('Server start failed:', err.message);
-      dialog.showErrorBox('启动失败', `后端服务启动失败，请尝试重新运行。\n\n${err.message}`);
-      app.quit();
-      return;
-    }
-  } else {
-    log('[dev] Using pnpm dev:server for backend');
-  }
-
-  // ── 创建窗口 ──
-  mainWindow = createWindow(isDev);
-
-  mainWindow.on('close', (e) => {
-    if (tray) {
-      e.preventDefault();
-      mainWindow.hide();
+if (!gotTheLock) {
+  // 已有实例在运行，直接退出（second-instance 事件不会在本进程触发）
+  app.quit();
+} else {
+  // 当用户尝试启动第二个实例时，聚焦已有窗口
+  app.on('second-instance', (_event, _commandLine, _workingDirectory) => {
+    log('Second instance detected, focusing existing window');
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      if (!mainWindow.isVisible()) mainWindow.show();
+      mainWindow.focus();
     }
   });
 
-  mainWindow.on('closed', () => {
-    mainWindow = null;
-  });
+  // ── 注册 IPC 处理器 ──
+  registerClipboardIpc();
+  registerFileDroppedIpc();
+  registerAppInfoIpc();
 
-  tray = createTray(mainWindow, { initClipboardMonitor: (win) => initClipboardMonitor(win, btihPatterns), stopClipboardMonitor });
-  initClipboardMonitor(mainWindow, btihPatterns);
-  registerShortcuts(mainWindow);
-});
-
-app.on('window-all-closed', () => {
-  // 不退出，因为还有托盘
-});
-
-app.on('before-quit', async () => {
-  app.isQuitting = true;
-
-  // 销毁系统托盘（不销毁会阻止进程退出）
-  destroyTray();
-
-  // 停止剪贴板监控（清除 setInterval，防止 PowerShell 子进程残留）
-  stopClipboardMonitor();
-
-  // 注销全局快捷键
-  unregisterAll();
-
-  // 关闭所有日志流
-  closeAllLoggers();
-
-  // 停止后端服务器（关闭 HTTP/WS、数据库连接、轮询定时器）
-  if (stopServerFn) {
+  app.whenReady().then(async () => {
+    // 动态加载共享常量（BTIH 匹配模式），传递给 clipboard-monitor 以保持同步
+    let btihPatterns = null;
     try {
-      await stopServerFn();
+      const constants = await import('../server/src/lib/constants.js');
+      btihPatterns = constants.BTIH_PATTERNS;
     } catch (err) {
-      log('Server stop error:', err.message);
+      log('Failed to load BTIH_PATTERNS, clipboard-monitor will use defaults:', err.message);
     }
-    stopServerFn = null;
-    serverInstance = null;
-  }
-});
 
-app.on('activate', () => {
-  if (!mainWindow) {
+    // ── 生产模式：嵌入启动后端服务器 ──
+    // 开发模式下由 pnpm dev:server 单独启动，避免端口冲突
+    if (!isDev) {
+      log('Starting backend server...');
+      try {
+        serverInstance = await startServer();
+        log('Server ready');
+      } catch (err) {
+        log('Server start failed:', err.message);
+        dialog.showErrorBox('启动失败', `后端服务启动失败，请尝试重新运行。\n\n${err.message}`);
+        app.quit();
+        return;
+      }
+    } else {
+      log('[dev] Using pnpm dev:server for backend');
+    }
+
+    // ── 创建窗口 ──
     mainWindow = createWindow(isDev);
+
     mainWindow.on('close', (e) => {
-      if (tray) { e.preventDefault(); mainWindow.hide(); }
+      if (tray && !app.isQuitting) {
+        e.preventDefault();
+        mainWindow.hide();
+        // 首次最小化到托盘时，弹出提示告知用户
+        if (!mainWindow._trayHintShown) {
+          mainWindow._trayHintShown = true;
+          try {
+            const hint = new Notification({
+              title: 'BitHoard',
+              body: 'BitHoard 已最小化到系统托盘，右键托盘图标可完全退出。',
+              silent: true,
+            });
+            hint.show();
+          } catch (_) {
+            // Notification 不可用时静默忽略
+          }
+        }
+      }
     });
-    mainWindow.on('closed', () => { mainWindow = null; });
-  } else {
-    mainWindow.show();
-  }
-});
+
+    mainWindow.on('closed', () => {
+      mainWindow = null;
+    });
+
+    tray = createTray(mainWindow, { initClipboardMonitor: (win) => initClipboardMonitor(win, btihPatterns), stopClipboardMonitor });
+    initClipboardMonitor(mainWindow, btihPatterns);
+    registerShortcuts(mainWindow);
+  });
+
+  app.on('window-all-closed', () => {
+    // 不退出，因为还有托盘
+  });
+
+  app.on('before-quit', async () => {
+    app.isQuitting = true;
+
+    // 销毁系统托盘（不销毁会阻止进程退出）
+    destroyTray();
+
+    // 停止剪贴板监控（清除 setInterval，防止 PowerShell 子进程残留）
+    stopClipboardMonitor();
+
+    // 注销全局快捷键
+    unregisterAll();
+
+    // 关闭所有日志流
+    closeAllLoggers();
+
+    // 停止后端服务器（关闭 HTTP/WS、数据库连接、轮询定时器）
+    if (stopServerFn) {
+      try {
+        await stopServerFn();
+      } catch (err) {
+        log('Server stop error:', err.message);
+      }
+      stopServerFn = null;
+      serverInstance = null;
+    }
+  });
+
+  app.on('activate', () => {
+    if (!mainWindow) {
+      mainWindow = createWindow(isDev);
+      mainWindow.on('close', (e) => {
+        if (tray && !app.isQuitting) { e.preventDefault(); mainWindow.hide(); }
+      });
+      mainWindow.on('closed', () => { mainWindow = null; });
+    } else {
+      mainWindow.show();
+    }
+  });
+}

@@ -1,4 +1,4 @@
-const { Tray, Menu, nativeImage } = require('electron');
+const { Tray, Menu, nativeImage, app } = require('electron');
 const path = require('path');
 const { createLogger } = require('./logger');
 
@@ -46,7 +46,7 @@ function createTray(mainWindow, clipboardMonitor) {
       }
     },
     { type: 'separator' },
-    { label: '退出', click: () => { require('electron').app.isQuitting = true; require('electron').app.quit(); } },
+    { label: '退出', click: () => { app.isQuitting = true; app.quit(); } },
   ]);
 
   tray.setToolTip('BitHoard - 监控中');
