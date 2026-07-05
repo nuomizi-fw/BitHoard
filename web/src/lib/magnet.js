@@ -52,36 +52,46 @@ export function extractMagnetLinks(text) {
         }
     }
 
-    // 5) 干扰字符滤除：先清理已被步骤1-4匹配的已知文本，再对剩余文本提取散落hash
+    // 5) 干扰字符滤除：干扰字符一定是中文或表情符号。
+    //    先清理已被步骤1-4匹配的已知文本，再按中文/表情符号切分，
+    //    在每个段内独立提取 hash，避免跨自然边界拼接产生假阳性。
     let cleanedText = text;
     for (const r of results) {
         cleanedText = cleanedText.split(r.uri).join('');
     }
     cleanedText = cleanedText.replace(magnetRe, '');
 
-    const hexOnly = cleanedText.replace(/[^a-fA-F0-9]/g, '');
-    for (let i = 0; i <= hexOnly.length - 40; i++) {
-        const candidate = hexOnly.substring(i, i + 40);
-        if (/^[a-fA-F0-9]{40}$/.test(candidate)) {
-            const lower = candidate.toLowerCase();
-            if (!seenHash.has(lower)) {
-                seenHash.add(lower);
-                results.push({ uri: `magnet:?xt=urn:btih:${lower}`, type: "magnet" });
-            }
-            i += 39;
-        }
-    }
+    // 中文 + 表情符号的 Unicode 范围
+    const CJK_EMOJI_RE = /[\u4e00-\u9fff\u3400-\u4dbf\u3000-\u303f\uff00-\uffef\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}\u{2300}-\u{23FF}\u{2B00}-\u{2BFF}\u{FE00}-\u{FEFF}\u{200D}\u{20E3}]/gu;
+    const segments = cleanedText.split(CJK_EMOJI_RE).filter(s => s.length >= 32);
 
-    const base32Only = cleanedText.replace(/[^A-Z2-7a-z2-7]/gi, '');
-    for (let i = 0; i <= base32Only.length - 32; i++) {
-        const candidate = base32Only.substring(i, i + 32);
-        if (/^[A-Z2-7a-z2-7]{32}$/i.test(candidate)) {
-            const lower = candidate.toLowerCase();
-            if (!seenHash.has(lower)) {
-                seenHash.add(lower);
-                results.push({ uri: `magnet:?xt=urn:btih:${lower}`, type: "magnet" });
+    for (const seg of segments) {
+        // 段内提取十六进制 BTIH hash（40位）
+        const hexOnly = seg.replace(/[^a-fA-F0-9]/g, '');
+        for (let i = 0; i <= hexOnly.length - 40; i++) {
+            const candidate = hexOnly.substring(i, i + 40);
+            if (/^[a-fA-F0-9]{40}$/.test(candidate)) {
+                const lower = candidate.toLowerCase();
+                if (!seenHash.has(lower)) {
+                    seenHash.add(lower);
+                    results.push({ uri: `magnet:?xt=urn:btih:${lower}`, type: "magnet" });
+                }
+                i += 39;
             }
-            i += 31;
+        }
+
+        // 段内提取 Base32 BTIH hash（32位）
+        const base32Only = seg.replace(/[^A-Z2-7a-z2-7]/gi, '');
+        for (let i = 0; i <= base32Only.length - 32; i++) {
+            const candidate = base32Only.substring(i, i + 32);
+            if (/^[A-Z2-7a-z2-7]{32}$/i.test(candidate)) {
+                const lower = candidate.toLowerCase();
+                if (!seenHash.has(lower)) {
+                    seenHash.add(lower);
+                    results.push({ uri: `magnet:?xt=urn:btih:${lower}`, type: "magnet" });
+                }
+                i += 31;
+            }
         }
     }
 
